@@ -1,0 +1,51 @@
+#ifndef MAIN_H
+#define MAIN_H
+
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <math.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <netdb.h>
+
+#include "aprintf.h"
+#include "stats.h"
+#include "units.h"
+#include "zmalloc.h"
+
+struct config;
+
+static void *thread_main(void *);
+static int connect_socket(thread *, connection *);
+static int reconnect_socket(thread *, connection *);
+
+static int record_rate(aeEventLoop *, long long, void *);
+
+static void socket_connected(aeEventLoop *, int, void *, int);
+static void socket_writeable(aeEventLoop *, int, void *, int);
+static void socket_readable(aeEventLoop *, int, void *, int);
+
+static uint64_t time_us();
+
+static int parse_args(struct config *, int, char **);
+
+static void print_stats_header();
+static void print_stats(char *, stats *, char *(*)(long double));
+static void print_stats_latency(stats *);
+static void print_running(stats  *stats, uint64_t time, uint64_t realtime);
+static int response_complete(void * data, char * buf, size_t n);
+
+
+#endif /* MAIN_H */
