@@ -1,6 +1,6 @@
 # wrktcp - support TCP protocol without lua
 
-*你可以查看中文版的说明:README_EN.md*
+*你可以查看中文版的说明:README_CN.md*
 
 [TOC]
 
@@ -74,7 +74,7 @@ Use 2 threads (-T2), 20 concurrent connections (-c20), keep running for 5 second
 
 
 - output
-``````
+```
 Running 10s test @ 127.0.0.1:8000 using sample_tiny.ini
   2 threads and 10 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
@@ -92,18 +92,17 @@ Requests/sec-Failure:      0.00
 Transfer/sec:     13.92KB
 ```
 
-
 - command detail description
 
-> ```
->-t, --threads:     Use the total number of threads, generally recommended to use 2 times the number of CPU cores -1
-> -c, --connections: Total number of connections, regardless of thread. The number of connections per thread is connections/ Threads
-> -d, --duration:    write 2S, 2m, 2h
->  --latency:     distribution of printing delay
->  --timeout:     Specify timeout, default is 5 minutes, longer takes up more statistical memory.	
->     --realtime	   refreshes TPS information in realtime and records TPS and delayed process data to generate HTML
->    -v  --version:     Print version information
->    ```
+```
+-t, --threads:     Use the total number of threads, generally recommended to use 2 times the number of CPU cores -1
+-c, --connections: Total number of connections, regardless of thread. The number of connections per thread is connections/ Threads
+-d, --duration:    write 2S, 2m, 2h
+    --latency:     distribution of printing delay
+    --timeout:     Specify timeout, default is 5 minutes, longer takes up more statistical memory.	     --realtime	   refreshes TPS information in realtime and records TPS and delayed process data to generate HTML
+-v  --version:     Print version information
+```
+
 
 - output detail description
 
