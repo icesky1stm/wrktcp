@@ -33,14 +33,19 @@ CFLAGS  += -I$(ODIR)/include
 #LDFLAGS += -L$(ODIR)/lib
 LDFLAGS +=
 
-all: $(BIN)
+all: $(BIN) test
 
 clean:
-	$(RM) -rf $(BIN) obj/*
+	$(RM) -rf $(BIN) obj/* *.log 
+	cd ./test && make clean
 
 $(BIN): $(OBJ)
 	@echo LINK $(BIN)
 	@$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+
+.PHONY:test
+test: 
+	@cd ./test && make clean && make
 
 $(ODIR):
 	@mkdir -p $@

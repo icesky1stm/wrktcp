@@ -20,7 +20,7 @@ void islog_print(char *file, long line, char *level, char *fmtstr, ...);
 /** 定义各种类型的日志输出 **/
 #ifdef ISLOG_ERROR_ENABLE
 #define islog_error(...)  \
-do{                       \
+do{                      \
     islog_print(__FILE__,__LINE__, "error", __VA_ARGS__);\
 }while(0)
 #else

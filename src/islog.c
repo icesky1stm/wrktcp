@@ -78,4 +78,3 @@ void islog_print(char *file, long line, char *level, char *fmtstr, ...)
     return ;
 }
 
-

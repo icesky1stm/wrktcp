@@ -1,125 +1,220 @@
-# wrktcp - 基于wrk做二次开发的实现tcp协议的压测工具
+# wrktcp - support TCP protocol without lua
 
-由于wrk不支持tcp协议的压测，本程序主要是用来实现tcp协议下的压测程序,同时也解除了ssl和lua的依赖。
+*你可以查看中文版的说明:README_EN.md*
 
-## 支持功能以及与wrk的区别
+[TOC]
 
-与wrk的区别主要如下：
-1. 支持tcp协议。因为tcp协议的报文一般有特殊约定，因此使用ini压测配置文件来约定。
-2. ini压测配置文件。主要来配置压测的地址，报文的约定以及压测时可变参数的配置。
-3. 输出格式完全复用wrk的结果。
-4. 不依赖任何第三方库，包括luajit和ssl，因此这是一个纯净的(pure)C的压测工程。
+This procedure is mainly based on WRK to remove SSL and Lua dependence, using TCPINI configuration to achieve the TCP protocol under the stress test.
 
-## 快速使用
+## Functions overview
 
-    wrktcp -t4 -c400 -d30s -f./wrktcp_sample.ini
+1. The overall framework is based on WRK extension. Statistics, most commands and output results follow WRK, but some adjustments have been made.
+2. Support the stress test of TCP protocol, including various protocols and communication formats.
+3. Support the definition of sending message information, reply message information, and reply successful response information comparison configuration.
+4. Support parameter variables of request message. Parameters are similar to loadRunner, with the following four types:
+   1. COUNTER, iterator, such as unique flow, can define scope and define step size.
+   2. DATETIME, is exactly the same format as the Strtime.
+   3. CONNECTID, a unique ID for a connection, generally used as a terminal number, etc.
+   4. FILE, FILE mode, supports sequential reading of contents from files for content assignment.
+5. Support dynamic refresh of TPS and delay during pressure measurement. TODO
+6. Support recording pressure test process information, and generate HTML pages for display. TODO
+7. In principle, HTTP is also supported, because HTTP is also a kind of TCP protocol.
 
-  This runs a benchmark for 30 seconds, using 12 threads, and keeping
-  400 HTTP connections open.
 
-  Output:
 
-    Running @30s test @127.0.0.1 @8080
-      12 threads and 400 connections
-      Thread Stats   Avg      Stdev     Max   +/- Stdev
-        Latency   635.91us    0.89ms  12.92ms   93.69%
-        Req/Sec    56.20k     8.07k   62.00k    86.54%
-      22464657 requests in 30.00s, 17.76GB read
-    Requests/sec: 748868.53
-    Transfer/sec:    606.33MB
-    
-关于结果的说明
+## The difference with wrk
+
+1. Added support for TCP protocol. Use the INI profile to configure the TCP packet format. The connection address, message convention, request message, and reply message information are all configured in this file.
+3. Remove Lua dependencies, customize content and judgment without learning Lua, a configuration file will do.
+4. Do not rely on any third-party libraries and deps SSL and Luajit. So this is a pure C project.
+4. Distribution statistics for Thread Stat reduce the maximum TPS support from 1000W to 100W, and increase TPS accuracy from 1 to 0.1.
+5. The output basically follows WRK, increasing the classification of success and failure. Because the original WRK did not consider business-level errors, configuration was added.
+6. TODO: dynamic refresh TPS and delay are added, so that real-time observation of pressure measurement can also be made in the process of pressure measurement for a long time.
+7. TODO: generate HTML reports and perform process monitoring.
+
+
+
+## install
+
+- macos
+
+cd wrktcp && make
+
+- linux
+
+cd wrktcp && make
+
+- windows
+
+需要下载编译器，或者直接下载release版本。
+
+
+
+## Quick Start
+
+- Modify the sample_tiny.ini configuration
+
+```ini
+[common]
+host = 127.0.0.1
+port = 8000
+
+[request]
+req_body = this is a test
 ```
-Running 30s test @ http://www.bing.com (压测时间 30s)
-  8 threads and 200 connections (共 8 个测试线程, 200 个连接)
+
+- run the command
+
+```sh
+wrktcp -t2 -c20 -d10s --latency sample_tiny.ini
+```
+
+Similar to WRK, this command represents the following:
+Use 2 threads (-T2), 20 concurrent connections (-c20), keep running for 5 seconds (-d5s), run with configuration sample_tiny.ini.
+
+
+- output
+``````
+Running 10s test @ 127.0.0.1:8000 using sample_tiny.ini
+  2 threads and 10 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-              (平均值) (标准差)(最大值)(正负一个标准差所占比例)
-    Latency    46.67ms  215.38ms   1.67s    95.59%
-    (延迟)
-    Req/Sec     7.91k     1.15k   10.26k    70.77%
-    (处理中的请求数)
-  Latency Distribution (延迟分布)
-     50%    2.93ms
-     75%    3.78ms
-     90%    4.73ms
-     99%    1.35s (99 分位的延迟)
-  1790465 requests in 30.01s, 684.08MB read (30.01 秒内共处理完成了 1790465 个请求, 读取了 684.08MB 数据)
-Requests/sec:  59658.29 (平均每秒处理完成 59658.29 个请求)
-Transfer/sec:     22.79MB (平均每秒读取数据 22.79MB)
+    Latency    23.02ms   43.78ms 356.62ms   94.88%
+    Req/Sec   354.37     74.31   454.50     90.62%
+  Latency Distribution
+     50%   12.99ms
+     75%   14.02ms
+     90%   15.74ms
+     99%  274.89ms
+  6862 requests in 10.11s, 140.72KB read
+Requests/sec:    678.90
+Requests/sec-Success:    678.90
+Requests/sec-Failure:      0.00
+Transfer/sec:     13.92KB
 ```
 
-## 命令行参数的详细说明
 
-    -c, --connections: total number of TCP connections to keep open with
-                       each thread handling N = connections/threads
-    
-    -d, --duration:    duration of the test, e.g. 2s, 2m, 2h
-    
-    -t, --threads:     total number of threads to use
-    
-    -f, --file:  ini file, use to define tcp package format
-    
-    -H, --header:      HTTP header to add to request, e.g. "User-Agent: wrk"
-    
-        --latency:     print detailed latency statistics
-    
-        --timeout:     record a timeout if a response is not received within
-                       this amount of time.
+- command detail description
 
-## 场景配置文件的详细说明
-下面是一个典型的配置例子,一个配置文件有如下几部分组成:
-- head, 主要用来配置报文头，如果没有可以配置为空
-- body, 主要用来配置发送报文,支持各种参数
-- rsp, 响应信息的长度
-- paramters
-```
-# wrktcp send message config file
-[head]
-$(LEN)
+> ```
+>-t, --threads:     Use the total number of threads, generally recommended to use 2 times the number of CPU cores -1
+> -c, --connections: Total number of connections, regardless of thread. The number of connections per thread is connections/ Threads
+> -d, --duration:    write 2S, 2m, 2h
+>  --latency:     distribution of printing delay
+>  --timeout:     Specify timeout, default is 5 minutes, longer takes up more statistical memory.	
+>     --realtime	   refreshes TPS information in realtime and records TPS and delayed process data to generate HTML
+>    -v  --version:     Print version information
+>    ```
 
-[body]
-<root>
-	<date>$(DATE)</date>
-	<branch>$(BRANCH)</branch>
-	<traceno>$(TRACENO)</branch>
-	<term>$(TERMNO)</term>
-	<bankno>313233000017</bankno>
-	<name>张三</name>
+- output detail description
+
+> Running 10s test @ 127.0.0.1:8000 using sample_tiny.ini
+>   2 threads and 10 connections
+
+Represents the base case of the command and the base case of the connection. The program executes the load and prints as soon as it completes the configuration.
+
+>   Thread Stats   Avg      Stdev     Max   +/- Stdev
+>     Latency    23.02ms   43.78ms 356.62ms   94.88%
+>     Req/Sec   354.37     74.31   454.50     90.62%
+
+Latency represents Latency time, and Req/Sec represents the number of successful response strokes per second (TPS). It should be noted that this part of the Latency data is the data of a single thread.
+
+Description: Thread Stats, mean (Avg), standard deviation (Stdev), maximum (Max), percentage of data within one standard deviation (+/ -stdev)
+
+If the pressure measuring system is stable, the mean and the maximum are expected to be the same, the expected standard deviation is 0, and the expected standard deviation is 100%.
+
+
+
+>   Latency Distribution
+>      50%   12.99ms
+>      75%   14.02ms
+>      90%   15.74ms
+>      99%  274.89ms
+
+The statistics of the delay distribution, 50% to 99%, are sorted by corresponding time. So 50% is what's the 50th data delay and 99% is what's the 99th data delay.
+
+
+
+>   6862 requests in 10.11s, 140.72KB read
+>
+> Requests/sec:    678.90
+> Requests/sec-Success:    678.90
+> Requests/sec-Failure:      0.00
+> Transfer/sec:     13.92KB
+
+The first line represents: 6862 requests in 10.11 seconds, with a total of 140.72KB read.
+
+Requests/sec:    678.90  The total request TPS, containing the total number of successes and failures, is the same as WRK.
+
+Requests/sec-Success & Requests/sec-Failure :  Is to distinguish whether the business reply was successful or not, it may have been correctly answered, but the message returned is an error message.
+
+Transfer/sec: The size of the transmitted data per second.
+
+- ini configuration desrciption
+
+```ini
+[common]
+host = 127.0.0.1
+port = 8000
+
+[request]
+# The length of the message's length, 8 by default
+req_len_len = 8
+# length is all or only calculated body, the default is the optional body configuration of total
+req_len_type = body
+# request head, default length only
+req_head = $(length)
+# The content of the request body
+req_body = \
+<root>\
+	<date>$(DATE)</date>\
+	<branch>$(BRANCH)</branch>\
+	<traceno>20201222$(TRACENO)</branch>\
+	<term>$(TERMNO)</term>\
+	<bankno>313233000017</bankno>\
+	<name>sam</name>\
 </root>
 
-[rsp]
-rsp_head = 20
-rsp_code = head,fixed,10,16
-#rsp_code = body,xml, "retCode"
-#rsp_code = body,json, "retCode"
-rsp_success = 000000
+[response]
+# Then head length 
+rsp_headlen = 16
+# The length's location in the message ,1 is default
+rsp_len_beg = 5
+# The length of the message's length, 8 by default
+rsp_len_len = 8
+# length is all or only calculated body, the default is the optional body configuration of total
+rsp_len_type = body
+
+# response code type, default is fixed, optional is xml,json and to be continued
+rsp_code_type = xml
+# response code location, body or head
+rsp_code_location = body
+# the tag of the response code
+rsp_code_localtion_tag = <retCode>
+# response code success
+rsp_code_success = 000000
 
 [paramters]
-LEN = LENGTH, 20, "%08ld"
-TRACENO = COUNTER, 100, 100000, 2, "%08ld"
-BRANCH =  FILE, branch.txt
-TERMNO = CONNECTID
 DATE = DATETIME, "%H:%M:S"
+BRANCH =  FILE, branch.txt
+TRACENO = COUNTER, 100, 100000, 2, "%08ld"
+TERMNO = CONNECTID
 ```
 
-## 压力测试的技巧小贴士
-
-## 关于为什么不使用wrk2
-
-关于解决**协调遗漏（Coordinated Omisson）**的wrk2的文章：https://blog.csdn.net/minxihou/article/details/97318121
-
-仅代表个人观点，作者从技术说的很对，但是从实际工程角度没有实际价值。原因有两点：
-第一、一般情况下，压测都是希望有一个较好的结果。
-第二、如果是压测软件都会有的统计口径问题，那么即使这个统计方式有问题，但是因为是统一的统计口径和方法，因此也是可信赖的。
-
-因此，相对于每次讨论TPS都需要明确使用何种软件并且是否排除了协调遗漏，这种复杂的前提造成的沟通困难来说，统一沟通方法就先的更为重要了。
-
-## 确认须知
-
-  wrk contains code from a number of open source projects including the
-  'ae' event loop from redis, the nginx/joyent/node.js 'http-parser',
-  and Mike Pall's LuaJIT. Please consult the NOTICE file for licensing
-  details.
 
 
+## why not use WRK2
+
+here are sharp contrasts in the WRK2 article on addressing the Coordinated omission of ：https://blog.csdn.net/minxihou/article/details/97318121
+
+The reasons for not extending from WRK2, personal point of view is that the author is technically correct, but has no practical value from a practical engineering point of view. For two reasons:
+First, under normal circumstances, pressure measurement is expected to have a better result.
+Second, if it is the pressure measurement software will have the statistical caliber problem, then even if the statistical method has problems, but because it is a unified statistical caliber and method, so it is reliable.
+
+Therefore, it is more important to have a unified approach to communication than to have a clear understanding of what software to use and whether coordination omissions are eliminated in every discussion of TPS.
+
+
+
+## Acknowledgements
+
+WRKTCP is an extended development based on WRK. Of course, WRK is also the use of a large number of Redis, Nignx, Luajit source code, use and extension, please pay attention to the corresponding open source library protocols.
 
