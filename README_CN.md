@@ -75,7 +75,7 @@ wrktcp -t2 -c20 -d10s --latency sample_tiny.ini
 
 - 输出结果
 
-``````
+```
 Running 10s test @ 127.0.0.1:8000 using sample_tiny.ini
   2 threads and 10 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
