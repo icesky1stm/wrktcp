@@ -82,7 +82,7 @@
 #define atomicSet(var,value) __atomic_store_n(&var,value,__ATOMIC_RELAXED)
 #define REDIS_ATOMIC_API "atomic-builtin"
 
-#elif defined(HAVE_ATOMI)
+#elif defined(HAVE_ATOMIC)
 /* Implementation using __sync macros. */
 
 #define atomicIncr(var,count) __sync_add_and_fetch(&var,(count))
