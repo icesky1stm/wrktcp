@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #include <time.h>
 /* af_unix,”Úsocket π”√ */
 #include <sys/un.h>

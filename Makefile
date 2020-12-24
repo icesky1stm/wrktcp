@@ -1,5 +1,5 @@
 #CFLAGS  += -std=c99 -Wall -O2 -D_REENTRANT
-CFLAGS  += -Wall
+CFLAGS  += -Wall -std=c99
 
 LIBS    := -lm -lpthread
 
