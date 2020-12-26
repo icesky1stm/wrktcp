@@ -9,6 +9,8 @@
 #include <string.h>
 #include "islog.h"
 
+
+
 status sock_connect(connection *c, char *host) {
     return OK;
 }

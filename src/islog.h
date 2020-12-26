@@ -13,9 +13,7 @@ void islog_print(char *file, long line, char *level, char *fmtstr, ...);
 #define ISLOG_ERROR_ENABLE
 #define ISLOG_WARN_ENABLE
 #define ISLOG_INFO_ENABLE
-/*
-#define ISLOG_DEBUG_ENABLE
- */
+#define ISLOG_DEBUG_ENABLE_NO
 
 /** 定义各种类型的日志输出 **/
 #ifdef ISLOG_ERROR_ENABLE

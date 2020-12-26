@@ -6,6 +6,7 @@
 #define TCPINI_H
 
 #define TCPINI_MAX_PARANUM 20
+#define  TCPINIFILE_MAX_LENGTH 256
 
 typedef struct _a_para{
     char key[32];
@@ -22,6 +23,7 @@ typedef struct _a_para{
 
 typedef struct _tcpini_content {
     /** 基本信息 common **/
+    char file[TCPINIFILE_MAX_LENGTH];
     char *host;
     int port;
     enum{

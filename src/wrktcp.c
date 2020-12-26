@@ -1,51 +1,27 @@
 // Copyright (C) 2012 - Will Glozer.  All rights reserved.
 
-#include "wrktcp.h"
 #include "main.h"
+#include "wrktcp.h"
 
-#include "version.h"
-#include "islog.h"
-#include "net.h"
-#include <arpa/inet.h>
+/** wrk的整体汇总数据 **/
+config cfg;
 
-
-#define  TCPINIFILE_MAX_LENGTH 256
-
-static struct config {
-    uint64_t connections;
-    uint64_t duration;
-    uint64_t threads;
-    uint64_t timeout;
-    uint64_t pipeline;
-    uint64_t delay;
-    uint64_t realtime;
-    uint64_t dynamic;
-    uint64_t latency;
-    char    *host;
-    int     port;
-    char    tcpinifile[TCPINIFILE_MAX_LENGTH];
-    tcpini  tcpini;
-} cfg;
-
-static struct {
-    stats *latency;
-    stats *requests;
-} statistics;
-
+/** wrk这么写看起来像对象的属性，毫无意义 **/
 static struct sock sock = {
-    .connect  = sock_connect,
-    .close    = sock_close,
-    .read     = sock_read,
-    .write    = sock_write,
-    .readable = sock_readable
+        .connect  = sock_connect,
+        .close    = sock_close,
+        .read     = sock_read,
+        .write    = sock_write,
+        .readable = sock_readable
 };
 
+/**  ctrl +c 打断信号 **/
 static volatile sig_atomic_t stop = 0;
-
 static void handler(int sig) {
     stop = 1;
 }
 
+/** 使用说明 **/
 static void usage() {
     printf("Usage: wrktcp <options> filename                      \n"
            "  Necessary Options:                                  \n"
@@ -56,8 +32,8 @@ static void usage() {
            "  Condition Options:                                  \n"
            "        --latency          Print latency statistics   \n"
            "        --timeout     <T>  Socket/request timeout     \n"
-           "        --realtime    <T>  Print real-time tps/latency\n"
-           "                           and output a html chart    \n"
+           "        --trace            Print tps/latency trace    \n"
+           "        --html             output a html chart        \n"
 
            "    -v, --version          Print version details      \n"
            "                                                      \n"
@@ -68,7 +44,16 @@ static void usage() {
            );
 }
 
+/*********************************************************
+ * wrktcp 主程序
+ * @param argc
+ * @param argv
+ * @return
+ *********************************************************/
 int main(int argc, char **argv) {
+    /** 设置信号忽略 **/
+    signal(SIGPIPE, SIG_IGN);
+    signal(SIGINT,  SIG_IGN);
 
     /** 解析入口参数 **/
     if (parse_args(&cfg, argc, argv)) {
@@ -77,26 +62,20 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    /** 设置信号忽略 **/
-    signal(SIGPIPE, SIG_IGN);
-    signal(SIGINT,  SIG_IGN);
-
     /** 设置统计信息初始值 **/
-    statistics.latency  = stats_alloc(cfg.timeout * 1000);
-    statistics.requests = stats_alloc(MAX_THREAD_RATE_S);
-    thread *threads     = zcalloc(cfg.threads * sizeof(thread));
+    cfg.statistics.latency  = stats_alloc(cfg.timeout * 1000);
+    cfg.statistics.requests = stats_alloc(MAX_THREAD_RATE_S);
+    cfg.p_threads = zcalloc(cfg.threads * sizeof(thread));
 
     /** 解析tcpinifile文件 **/
-    if(tcpini_file_load(cfg.tcpinifile, &cfg.tcpini) != 0){
-        fprintf(stderr, "unable to load tcpinifile %s\n",cfg.tcpinifile);
+    if(tcpini_file_load(cfg.tcpini.file, &cfg.tcpini) != 0){
+        fprintf(stderr, "unable to load tcpinifile %s\n",cfg.tcpini.file);
         exit(1);
     }
 
-    cfg.host = cfg.tcpini.host;
-    cfg.port = cfg.tcpini.port;
-
+    /** 开始创建线程 **/
     for (uint64_t i = 0; i < cfg.threads; i++) {
-        thread *t      = &threads[i];
+        thread *t      = &cfg.p_threads[i];
         t->tno = i + 1;
         t->loop        = aeCreateEventLoop(10 + cfg.connections * 3);
         t->connections = cfg.connections / cfg.threads;
@@ -107,10 +86,10 @@ int main(int argc, char **argv) {
             cfg.pipeline = 1;
             /* 动态模板 */
             if(cfg.tcpini.paras->value != NULL){
-                cfg.dynamic = true;
+                cfg.isdynamic = 1;
             }
             /* 延迟发送，暂不支持 */
-            cfg.delay = 0;
+            cfg.isdelay = 0;
         }
 
         if (!t->loop || pthread_create(&t->thread, NULL, &thread_main, t)) {
@@ -120,6 +99,7 @@ int main(int argc, char **argv) {
         }
     }
 
+    /** 设置ctrl+c打断信号 **/
     struct sigaction sa = {
         .sa_handler = handler,
         .sa_flags   = 0,
@@ -127,86 +107,74 @@ int main(int argc, char **argv) {
     sigfillset(&sa.sa_mask);
     sigaction(SIGINT, &sa, NULL);
 
-    char *time = format_time_s(cfg.duration);
-    printf("Running %s test @ %s:%d using %s\n", time, cfg.host, cfg.port, cfg.tcpinifile);
+    /** 打印输出头 **/
+    printf("Running %s loadtest ", format_time_s(cfg.duration));
+    printf("@ %s:%d ", cfg.tcpini.host, cfg.tcpini.port);
+    printf("using %s", cfg.tcpini.file);
+    printf("\n");
     printf("  %"PRIu64" threads and %"PRIu64" connections\n", cfg.threads, cfg.connections);
 
-    uint64_t start    = time_us();
-    uint64_t complete = 0;
-    uint64_t bytes    = 0;
-    errors errors     = { 0 };
+    /** 初始化基本信息 **/
+    cfg.result.tm_start   = istime_us();
+    cfg.result.complete = 0;
+    cfg.result.bytes = 0;
+    memset( &cfg.result.errors, 0x00, sizeof(errors));
 
-    /** 如果未设置realtime, 则不刷新和记录 **/
-    if( cfg.realtime == 0){
-        sleep(cfg.duration);
-    }else{
-        print_running( statistics.requests, cfg.duration, cfg.realtime);
-    }
+    /** 主进程等待后并设置停止标志 **/
+    running_sleep( &cfg);
     stop = 1;
-    /** sleep 100ms **/
-    usleep(100000);
 
-    /*** 开始统计结果信息 ***/
-    for (uint64_t i = 0; i < cfg.threads; i++) {
-        thread *t = &threads[i];
+    /** 开始记录统计结果信息 **/
+    for (uint64_t j = 0; j < cfg.threads; j++) {
+        thread *t = &cfg.p_threads[j];
+        /* 挨个线程等待 */
         pthread_join(t->thread, NULL);
 
-        complete += t->complete;
-        bytes    += t->bytes;
+        cfg.result.complete += t->complete;
+        cfg.result.bytes    += t->bytes;
 
-        errors.connect += t->errors.connect;
-        errors.read    += t->errors.read;
-        errors.write   += t->errors.write;
-        errors.timeout += t->errors.timeout;
-        errors.status  += t->errors.status;
+        cfg.result.errors.connect += t->errors.connect;
+        cfg.result.errors.read    += t->errors.read;
+        cfg.result.errors.write   += t->errors.write;
+        cfg.result.errors.timeout += t->errors.timeout;
+        cfg.result.errors.status  += t->errors.status;
     }
 
-    uint64_t runtime_us = time_us() - start;
-    long double runtime_s   = runtime_us / 1000000.0;
-    long double req_per_s   = complete   / runtime_s;
-    long double req_success_per_s = (complete-errors.connect-errors.read-errors.write-errors.timeout-errors.status) / runtime_s;
-    long double req_fail_per_s = errors.status / runtime_s;
-    long double bytes_per_s = bytes      / runtime_s;
+    cfg.result.tm_end = istime_us();
+    cfg.result.runtime_us = cfg.result.tm_end - cfg.result.tm_start;
+    cfg.result.runtime_s   = cfg.result.runtime_us / 1000000.0;
+    cfg.result.req_per_s   = cfg.result.complete   / cfg.result.runtime_s;
+    cfg.result.req_success_per_s = (cfg.result.complete-cfg.result.errors.status) / cfg.result.runtime_s;
+    cfg.result.req_fail_per_s = cfg.result.errors.status / cfg.result.runtime_s;
+    cfg.result.bytes_per_s = cfg.result.bytes      / cfg.result.runtime_s;
 
-    if (complete / cfg.connections > 0) {
-        int64_t interval = runtime_us / (complete / cfg.connections);
-        stats_correct(statistics.latency, interval);
+    /** Coordinated Omission 状态修正, 我认为是瞎修正应该使用wrk2的方法，但是为了保持和wrk的结果一致暂时保留 **/
+    if (cfg.result.complete / cfg.connections > 0) {
+        /* 计算一次连接平均延时多少 */
+        int64_t interval = cfg.result.runtime_us / (cfg.result.complete / cfg.connections);
+        /* 进行修正，应该学习wrk2，增加-R参数 */
+        stats_correct(cfg.statistics.latency, interval);
     }
 
-    print_stats_header();
-    /** 缩短了10倍  **/
-    print_stats("Latency", statistics.latency, format_time_us);
-    print_stats("Req/Sec", statistics.requests, format_metric10);
-    if (cfg.latency) print_stats_latency(statistics.latency);
+    /** 输出到屏幕上 **/
+    output_console(&cfg);
 
-    char *runtime_msg = format_time_us(runtime_us);
-
-    printf("  %"PRIu64" requests in %s, %sB read\n", complete, runtime_msg, format_binary(bytes));
-    if (errors.connect || errors.read || errors.write || errors.timeout) {
-        printf("  Socket errors: connect %d, read %d, write %d, timeout %d\n",
-               errors.connect, errors.read, errors.write, errors.timeout);
+    /** 输出到html文件中 **/
+    if( cfg.ishtml ){
+        output_html(&cfg);
     }
-
-    if (errors.status) {
-        printf("  Failure responses: %d\n", errors.status);
-    }
-
-    printf("Requests/sec: %9.2Lf\n", req_per_s);
-    /** 新增失败的统计 **/
-    printf("Requests/sec-Success: %9.2Lf\n", req_success_per_s);
-    printf("Requests/sec-Failure: %9.2Lf\n", req_fail_per_s);
-    printf("Transfer/sec: %10sB\n", format_binary(bytes_per_s));
 
     return 0;
 }
 
+/** 多线程的主程序，使用epoll创建和管理多个连接 **/
 void *thread_main(void *arg) {
     thread *thread = arg;
 
     /** 如果不是动态模板，则只初始化一次发送信息,提高效率 **/
     char *request = NULL;
     long length = 0;
-    if ( !cfg.dynamic ) {
+    if ( !cfg.isdynamic ) {
         if(tcpini_request_parser(thread->tcpini, &request, &length) != 0){
             fprintf(stderr, "parser ini content error !!!");
             return NULL;
@@ -221,16 +189,16 @@ void *thread_main(void *arg) {
         c->cno = thread->tno * 10000 + i + 1;
         c->request = request;
         c->length  = length;
-        c->delayed = cfg.delay;
+        c->delayed = cfg.isdelay;
         c->tcpini = thread->tcpini;
-        islog_debug("c->no---[%ld]", c->cno);
+        islog_debug("CREATE c->no:ld", c->cno);
         connect_socket(thread, c);
     }
 
     aeEventLoop *loop = thread->loop;
     aeCreateTimeEvent(loop, RECORD_INTERVAL_MS, record_rate, thread, NULL);
 
-    thread->start = time_us();
+    thread->start = istime_us();
     aeMain(loop);
 
     aeDeleteEventLoop(loop);
@@ -297,16 +265,15 @@ static int record_rate(aeEventLoop *loop, long long id, void *data) {
          * 这样会产生两个问题：
          * 1.10000000 * uint64 = 80M的内存占用
          * 2.如果TPS较低，比如响应时间在100ms以上的系统，基本上TPS统计非常的不准确,因为刷新间隔是100MS，导致大量TPS分布都是0
-         * 本次为了不增加内存消耗，依旧使用1000W个分布，但是缩减了最大TPS的支持为100WTPS
+         * 这里TPS精度从1->0.1,为了不增加内存消耗，依旧使用1000W个分布，这样相当于缩减了最大TPS的支持到100W TPS
          * **/
-
-        uint64_t elapsed_ms = (time_us() - thread->start) / 1000;
+        uint64_t elapsed_ms = (istime_us() - thread->start) / 1000;
         uint64_t requests = (thread->requests * 10 / (double) elapsed_ms) * 1000;
 
-        stats_record(statistics.requests, requests);
+        stats_record(cfg.statistics.requests, requests);
 
         thread->requests = 0;
-        thread->start    = time_us();
+        thread->start    = istime_us();
     }
 
     if (stop) aeStop(loop);
@@ -325,7 +292,7 @@ static void socket_connected(aeEventLoop *loop, int fd, void *data, int mask) {
     connection *c = data;
     islog_debug("ALREADY CONNECTED cno:%ld", c->cno);
 
-    switch (sock.connect(c, cfg.host)) {
+    switch (sock.connect(c, cfg.tcpini.host)) {
         case OK:    break;
         case ERROR: goto error;
         case RETRY: return;
@@ -364,13 +331,13 @@ static void socket_writeable(aeEventLoop *loop, int fd, void *data, int mask) {
     /** 等于0的时候，就是要发送的时候 **/
     if (!c->written) {
         /*** 如果是动态模板,则每次写的时候都初始化,效率不高 ***/
-        if (cfg.dynamic) {
+        if (cfg.isdynamic) {
             if(tcpini_request_parser( &cfg.tcpini, &c->request, &c->length) != 0){
                 fprintf(stderr, "writer parser ini content error !!!");
                 goto error;
             }
         }
-        c->start   = time_us();
+        c->start   = istime_us();
         c->pending = cfg.pipeline;
     }
 
@@ -436,53 +403,55 @@ static void socket_readable(aeEventLoop *loop, int fd, void *data, int mask) {
     reconnect_socket(c->thread, c);
 }
 
-static uint64_t time_us() {
-    struct timeval t;
-    gettimeofday(&t, NULL);
-    return (t.tv_sec * 1000000) + t.tv_usec;
-}
-
 static struct option longopts[] = {
+    { "threads",     required_argument, NULL, 't' },
     { "connections", required_argument, NULL, 'c' },
     { "duration",    required_argument, NULL, 'd' },
-    { "threads",     required_argument, NULL, 't' },
     { "latency",     no_argument,       NULL, 'L' },
     { "timeout",     required_argument, NULL, 'T' },
-    { "realtime",    required_argument, NULL, 'R' },
+    { "trace",       no_argument,       NULL, 'S' },
+    { "html",        optional_argument, NULL, 'H' },
     { "help",        no_argument,       NULL, 'h' },
     { "version",     no_argument,       NULL, 'v' },
     { NULL,          0,                 NULL,  0  }
 };
 
-static int parse_args(struct config *cfg, int argc, char **argv) {
+static int parse_args(config * lcfg, int argc, char **argv) {
     int c;
 
-    memset(cfg, 0, sizeof(struct config));
-    cfg->threads     = 2;
-    cfg->connections = 10;
-    cfg->duration    = 10;
-    cfg->timeout     = SOCKET_TIMEOUT_MS;
+    memset(lcfg, 0, sizeof(config));
+    lcfg->threads     = 2;
+    lcfg->connections = 10;
+    lcfg->duration    = 10;
+    lcfg->timeout     = SOCKET_TIMEOUT_MS;
 
     while ((c = getopt_long(argc, argv, "t:c:d:H:T:Lrv?", longopts, NULL)) != -1) {
         switch (c) {
             case 't':
-                if (scan_metric(optarg, &cfg->threads)) return -1;
+                if (scan_metric(optarg, &lcfg->threads)) return -1;
                 break;
             case 'c':
-                if (scan_metric(optarg, &cfg->connections)) return -1;
+                if (scan_metric(optarg, &lcfg->connections)) return -1;
                 break;
             case 'd':
-                if (scan_time(optarg, &cfg->duration)) return -1;
+                if (scan_time(optarg, &lcfg->duration)) return -1;
                 break;
             case 'L':
-                cfg->latency = true;
+                lcfg->islatency = 1;
                 break;
             case 'T':
-                if (scan_time(optarg, &cfg->timeout)) return -1;
-                cfg->timeout *= 1000;
+                if (scan_time(optarg, &lcfg->timeout)) return -1;
+                lcfg->timeout *= 1000;
                 break;
-            case 'R':
-                if (scan_time(optarg, &cfg->realtime)) return -1;
+            case 'S':
+                lcfg->istrace = 1;
+                break;
+            case 'H':
+                lcfg->ishtml = 1;
+                islog_info("ssssyyp--[%s]", lcfg->htmlfile);
+                islog_info("ssssyyp--[%s]", optarg);
+                strcpy( lcfg->htmlfile, optarg);
+                islog_info("ssss");
                 break;
             case 'v':
                 printf("wrktcp version %s [%s] ", WRKVERSION, aeGetApiName());
@@ -497,99 +466,106 @@ static int parse_args(struct config *cfg, int argc, char **argv) {
         }
     }
 
-    if (optind == argc || !cfg->threads || !cfg->duration) return -1;
+    if (optind == argc || !lcfg->threads || !lcfg->duration) return -1;
 
-    strcpy( cfg->tcpinifile, argv[optind]);
+    strcpy( lcfg->tcpini.file, argv[optind]);
     /* 检查压测脚本是否符合要求 */
-    if(strlen( cfg->tcpinifile) >= TCPINIFILE_MAX_LENGTH || strlen(cfg->tcpinifile) <= 0){
-        fprintf(stderr, "filename's length is not allow [%ld]\n", strlen( cfg->tcpinifile));
+    if(strlen( lcfg->tcpini.file) >= TCPINIFILE_MAX_LENGTH || strlen(lcfg->tcpini.file) <= 0){
+        fprintf(stderr, "filename's length is not allow [%ld]\n", strlen( lcfg->tcpini.file));
         return -1;
     }
-    if( strstr( cfg->tcpinifile, ".ini") == NULL){
-        fprintf( stderr, "tcpini file must be ended with .ini,[%s]", cfg->tcpinifile);
+    if( strstr( lcfg->tcpini.file, ".ini") == NULL){
+        fprintf( stderr, "tcpini file must be ended with .ini,[%s]", lcfg->tcpini.file);
         return -1;
     }
 
     /* 检查连接和线程数的关系 */
-    if (!cfg->connections || cfg->connections < cfg->threads) {
+    if (!lcfg->connections || lcfg->connections < lcfg->threads) {
         fprintf(stderr, "number of connections must be >= threads\n");
         return -1;
     }
     /* 检查realtime必须小于duration */
-    if( cfg->realtime >= cfg->duration){
-        fprintf(stderr, "realtime:%llu must less than duration:%llu \n", cfg->realtime, cfg->duration);
+    if( strlen( lcfg->htmlfile) > MAX_HTML_FILELEN){
+        fprintf(stderr, "output html filename[%s] is too long. \n", lcfg->htmlfile);
         return -1;
     }
 
     return 0;
 }
 
-static void print_stats_header() {
-    printf("  Thread Stats%6s%11s%8s%12s\n", "Avg", "Stdev", "Max", "+/- Stdev");
-}
-
-static void print_units(long double n, char *(*fmt)(long double), int width) {
-    char *msg = fmt(n);
-    int len = strlen(msg), pad = 2;
-
-    if (isalpha(msg[len-1])) pad--;
-    if (isalpha(msg[len-2])) pad--;
-    width -= pad;
-
-    printf("%*.*s%.*s", width, width, msg, pad, "  ");
-
-    free(msg);
-}
-
-static void print_stats(char *name, stats *stats, char *(*fmt)(long double)) {
-    uint64_t max = stats->max;
-    long double mean  = stats_mean(stats);
-    long double stdev = stats_stdev(stats, mean);
-
-    printf("    %-10s", name);
-    print_units(mean,  fmt, 8);
-    print_units(stdev, fmt, 10);
-    print_units(max,   fmt, 9);
-    printf("%8.2Lf%%\n", stats_within_stdev(stats, mean, stdev, 1));
-}
-
-static void print_stats_latency(stats *stats) {
-    long double percentiles[] = { 50.0, 75.0, 90.0, 99.0 };
-    printf("  Latency Distribution\n");
-    for (size_t i = 0; i < sizeof(percentiles) / sizeof(long double); i++) {
-        long double p = percentiles[i];
-        uint64_t n = stats_percentile(stats, p);
-        printf("%7.0Lf%%", p);
-        print_units(n, format_time_us, 10);
-        printf("\n");
-    }
-}
-
-/* 执行过程中刷新统计结果 */
-static void print_running(stats  *stats, uint64_t time, uint64_t realtime){
+/* 执行和等待 */
+static int running_sleep( struct config * lcfg ){
     uint64_t i ;
-    for( i =1; i <= time; i++){
+    uint64_t complete = 0;
+    uint64_t failure = 0;
+    uint64_t bytes = 0;
+    uint64_t error = 0;
+
+    /*** 开始等待lcfg->duration秒 ***/
+    for( i =1; i <= lcfg->duration; i++){
         /** 收到打断信号, 则直接退出 **/
         if( stop == 1 ){
+            printf("\n");
             break;
         }
-       sleep(realtime);
+        /** 每秒刷新一次 **/
+        sleep(1);
+
+        /** 开始统计结果信息 **/
+        complete = 0;
+        failure = 0;
+        bytes = 0;
+        error = 0;
+        for (int64_t j = 0; j < lcfg->threads; j++) {
+            thread *t = &lcfg->p_threads[j];
+            complete += t->complete;
+            failure += t->errors.status;
+            error += t->errors.connect + t->errors.read + t->errors.write + t->errors.timeout;
+            bytes    += t->bytes;
+        }
+
+        uint64_t runtime_us = istime_us() - lcfg->result.tm_start;
+        long double runtime_s   = runtime_us / 1000000.0;
+        long double req_success_per_s = (complete - failure) / runtime_s;
+        long double req_fail_per_s = failure / runtime_s;
+        long double bytes_per_s = bytes      / runtime_s;
+
         printf("\r");
 
-        uint64_t max = stats->max;
-        long double mean  = stats_mean(stats);
-        long double stdev = stats_stdev(stats, mean);
+        printf("  Time:%llu \bs", i);
+        printf(" TPS:%.2Lf/%.2Lf Latency:", req_success_per_s, req_fail_per_s);
+        printf("%s", format_time_us(lcfg->p_threads[0].latency));
+        printf(" BPS:%sB", format_binary(bytes_per_s));
+        printf(" Error:%llu    ", error);
 
-        printf("    %-10s", "Running Req/Sec ");
-        print_units(mean,  format_metric, 8);
-        print_units(stdev, format_metric, 10);
-        print_units(max,   format_metric, 9);
-        printf("%8.2Lf%%", stats_within_stdev(stats, mean, stdev, 1));
+        /** 跟踪趋势点记录 **/
+        if( lcfg->duration <= 100){
+            lcfg->trace.step_time = 1;
+            lcfg->trace.tps[i-1] = req_success_per_s;
+            lcfg->trace.latency[i-1] = lcfg->p_threads[0].latency;
+        }else{
+            /*
+            340秒 / 100个点 = 3;
+            1 4 7 10 13 16 19 22 25 28 31 34 37 40
+             */
+            lcfg->trace.step_time = lcfg->duration / TRACE_MAX_POINT;
+            if( lcfg->duration % TRACE_MAX_POINT  > 0 ){
+                lcfg->trace.step_time += 1;
+            }
+            if( (i-1)%lcfg->trace.step_time == 0){
+                lcfg->trace.tps[(i-1)/lcfg->trace.step_time] = req_success_per_s;
+                lcfg->trace.latency[(i-1)/lcfg->trace.step_time] = lcfg->p_threads[0].latency;
+            }
+        }
 
+
+        if( i == lcfg->duration){
+            printf("\n");
+        }
         fflush(stdout);
     }
 
-    return;
+    return 0;
 }
 static int response_complete(void * data, char * buf, size_t n) {
     connection *c = data;
@@ -599,7 +575,7 @@ static int response_complete(void * data, char * buf, size_t n) {
         return 0;
     }
 
-    uint64_t now = time_us();
+    uint64_t now = istime_us();
 
     thread->complete++;
     thread->requests++;
@@ -615,10 +591,11 @@ static int response_complete(void * data, char * buf, size_t n) {
     }
 
     if (--c->pending == 0) {
-        if (!stats_record(statistics.latency, now - c->start)) {
+        thread->latency = now - c->start;
+        if (!stats_record(cfg.statistics.latency, now - c->start)) {
             thread->errors.timeout++;
         }
-        c->delayed = cfg.delay;
+        c->delayed = cfg.isdelay;
         aeCreateFileEvent(thread->loop, c->fd, AE_WRITABLE, socket_writeable, c);
     }
 

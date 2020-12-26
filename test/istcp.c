@@ -167,7 +167,7 @@ int istcp_recv(int sock, char *msgbuf, int len, int timeout){
     return 0;
 }
 
-/*** 按超时时间等待,试图读一次接收固定长度内容，返回实际读取长度 ***/
+/*** 按超时时间等待,试图读一次接收固定长度内容，返回实际读取长度,不可靠的通讯模式，仅用于对方无法约定报文长度时使用 ***/
 int istcp_recv_nowait(int sock, char *msgbuf, int len, int timeout){
     int ret;
     int nfds;
@@ -295,10 +295,13 @@ int istcp_send(int sock, char *msgbuf, int len, int timeout){
     return 0;
 
 }
+
+/** accept获取新连接 **/
 int istcp_accept( int sock){
     return istcp_accept_gethost( sock, NULL);
 }
 
+/** 获取新连接并取得请求信息 **/
 int istcp_accept_gethost(int sock, char * *p_hostip) {
     int acceptSock;
     socklen_t len = 0;
@@ -317,6 +320,7 @@ int istcp_accept_gethost(int sock, char * *p_hostip) {
     return acceptSock;
 }
 
+/** 带backlog队列大小的绑定端口和监听 **/
 int istcp_listen_backlog(char *hostname, int port, int backlog){
     struct hostent *h;
     struct sockaddr_in sin;
@@ -378,7 +382,7 @@ int istcp_listen_backlog(char *hostname, int port, int backlog){
     return sock;
 }
 
-/** 常用监听服务 **/
+/** 标准绑定监听服务 **/
 int istcp_listen(char *hostname, int port){
     return istcp_listen_backlog( hostname, port, 10);
 }

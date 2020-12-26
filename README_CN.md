@@ -223,3 +223,25 @@ TERMNO = CONNECTID
 
 wrktcp是基于wrk的扩展开发。当然wrk也是使用了大量的redis、nignx， luajit的源码，使用和扩展的时候，请注意对应的开源库的相关协议。
 
+## 一些小技巧
+macos下的参数调整：
+```
+# 最大连接数，mac默认是128,不调整的话连接经常失败
+sysctl kern.ipc.somaxconn
+sudo sysctl -w kern.ipc.somaxconn=1024
+
+# TIME_WAIT的回收时间，默认是15秒，压测的时候,需要改成1秒,否则超过17k的随机端口未释放，mac就会报错（linux是30k左右）
+sysctl net.inet.tcp.msl
+sudo sysctl -w net.inet.tcp.msl=1000
+
+```
+
+linux下的参数调整:
+```
+修改/etc/sysctl.conf, 是否可以开启需要根据实际情况，总结来说，如果有F5或者负载均衡器，则不能开启tcp_tw_recycle
+
+M.16/root/wrktcp/wrktcp>sysctl -p
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_tw_recycle = 1
+net.ipv4.tcp_timestamps = 1
+```

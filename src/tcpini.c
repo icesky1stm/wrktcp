@@ -153,15 +153,6 @@ static int tcpini_check( tcpini * tcpini){
 
 /* 配置信息初始化 */
 static int tcpini_init( tcpini * tcpini){
-
-    /** 申请内存 **
-    tcpini = zcalloc(1 * sizeof(tcpini));
-    if(tcpini == NULL){
-        islog_error("can't zcalloc memroy for load ini content, [%s]", strerror(errno));
-        return -5;
-    }
-    */
-
     /** 设定初始值 **/
     tcpini->section = S_COMMON;
     tcpini->req_len_len = 8;
@@ -178,7 +169,7 @@ static int tcpini_init( tcpini * tcpini){
     tcpini->rsp_len_len = 8;
     tcpini->rsp_len_type = TCPINI_RSP_LENTYPE_BODY;
     tcpini->rsp_code_type = TCPINI_PKG_FIXED;
-    tcpini->rsp_code_location = TCPINI_RCL_HEAD;
+    tcpini->rsp_code_location = TCPINI_RCL_BODY;
     strcpy(tcpini->rsp_code_success, "000000");
     strcpy(tcpini->rsp_code_localtion_tag, "1 6");
 

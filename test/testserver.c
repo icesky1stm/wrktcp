@@ -107,7 +107,7 @@ static int	icesky_rcv(int argc, char *argv[])
 		printf("\nPORT [%s] less than 1024!\n", argv[1]);
 		exit(-1);
 	}
-	if( (sock = istcp_listen_backlog(NULL, portnum, 10)) < 0){
+	if( (sock = istcp_listen_backlog(NULL, portnum, 1024)) < 0){
         perror("socket");
         printf("--->%s,%d create sock error!!!", __FILE__, __LINE__);
         exit(1);
