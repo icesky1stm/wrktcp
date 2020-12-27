@@ -448,10 +448,9 @@ static int parse_args(config * lcfg, int argc, char **argv) {
                 break;
             case 'H':
                 lcfg->ishtml = 1;
-                islog_info("ssssyyp--[%s]", lcfg->htmlfile);
-                islog_info("ssssyyp--[%s]", optarg);
-                strcpy( lcfg->htmlfile, optarg);
-                islog_info("ssss");
+                if( optarg != NULL){
+                    strcpy( lcfg->htmlfile, optarg);
+                }
                 break;
             case 'v':
                 printf("wrktcp version %s [%s] ", WRKVERSION, aeGetApiName());
@@ -461,7 +460,7 @@ static int parse_args(config * lcfg, int argc, char **argv) {
             case '?':
             case ':':
             default:
-                islog_error("command is error, input the illegal character:[%c]", c);
+                printf("command is error, input the illegal character:[%c]\n", c);
                 return -1;
         }
     }
@@ -484,7 +483,7 @@ static int parse_args(config * lcfg, int argc, char **argv) {
         fprintf(stderr, "number of connections must be >= threads\n");
         return -1;
     }
-    /* 检查realtime必须小于duration */
+    /* 检查htmlfile大小 */
     if( strlen( lcfg->htmlfile) > MAX_HTML_FILELEN){
         fprintf(stderr, "output html filename[%s] is too long. \n", lcfg->htmlfile);
         return -1;
@@ -501,10 +500,15 @@ static int running_sleep( struct config * lcfg ){
     uint64_t bytes = 0;
     uint64_t error = 0;
 
+    lcfg->trace.step_time = lcfg->duration / TRACE_MAX_POINT;
+    if( lcfg->duration % TRACE_MAX_POINT  > 0 ){
+        lcfg->trace.step_time += 1;
+    }
     /*** 开始等待lcfg->duration秒 ***/
     for( i =1; i <= lcfg->duration; i++){
         /** 收到打断信号, 则直接退出 **/
         if( stop == 1 ){
+            lcfg->duration = (istime_us() - lcfg->result.tm_start) / 1000000 + 1;
             printf("\n");
             break;
         }
@@ -532,36 +536,53 @@ static int running_sleep( struct config * lcfg ){
 
         printf("\r");
 
-        printf("  Time:%llu \bs", i);
+        printf("  Time:%"PRIu64"s", i);
         printf(" TPS:%.2Lf/%.2Lf Latency:", req_success_per_s, req_fail_per_s);
         printf("%s", format_time_us(lcfg->p_threads[0].latency));
         printf(" BPS:%sB", format_binary(bytes_per_s));
-        printf(" Error:%llu    ", error);
+        printf(" Error:%"PRIu64"  ", error);
 
         /** 跟踪趋势点记录 **/
+        int n = 0;
         if( lcfg->duration <= 100){
             lcfg->trace.step_time = 1;
-            lcfg->trace.tps[i-1] = req_success_per_s;
-            lcfg->trace.latency[i-1] = lcfg->p_threads[0].latency;
+            n = i-1;
         }else{
-            /*
+            /*, 如果>100个点，则需要隔点记录
             340秒 / 100个点 = 3;
             1 4 7 10 13 16 19 22 25 28 31 34 37 40
              */
-            lcfg->trace.step_time = lcfg->duration / TRACE_MAX_POINT;
-            if( lcfg->duration % TRACE_MAX_POINT  > 0 ){
-                lcfg->trace.step_time += 1;
-            }
             if( (i-1)%lcfg->trace.step_time == 0){
-                lcfg->trace.tps[(i-1)/lcfg->trace.step_time] = req_success_per_s;
-                lcfg->trace.latency[(i-1)/lcfg->trace.step_time] = lcfg->p_threads[0].latency;
+                n = (i-1)/lcfg->trace.step_time;
+            }else{
+                n = -1;
             }
         }
+        if( n != -1){
+            /* 抓取所有线程最大的响应时间 */
+            int k;
+            for( k = 0; k < lcfg->threads ; k++){
+                if (lcfg->trace.latency[n] < lcfg->p_threads[k].latency){
+                    lcfg->trace.latency[n] = lcfg->p_threads[k].latency;
+                }
+            }
+            /* 记录tps并更新采集点tps最大值和最小值 */
+            lcfg->trace.tps[n] = req_success_per_s;
+            if( lcfg->result.tps_min > lcfg->trace.tps[n]  || lcfg->result.tps_min == 0 ){
+                lcfg->result.tps_min  = lcfg->trace.tps[n];
+            }
+            if( lcfg->result.tps_max < lcfg->trace.tps[n] ){
+                lcfg->result.tps_max  = lcfg->trace.tps[n];
+            }
+            cfg.trace.use_num++;
+        }
 
-
+        /*** 如果达到结尾，则换行 ***/
         if( i == lcfg->duration){
             printf("\n");
         }
+
+        /*** 将标准输出打印出去 ***/
         fflush(stdout);
     }
 

@@ -95,6 +95,8 @@ typedef struct config {
         long double req_success_per_s;
         long double req_fail_per_s;
         long double bytes_per_s;
+        long double tps_min;
+        long double tps_max;
     }result;
     /** 分布统计,计算平均值方差等 **/
     struct _statistics{
@@ -104,6 +106,7 @@ typedef struct config {
     /** 追踪统计，记录时间变化趋势 **/
     struct _trace{
         int64_t step_time;
+        int use_num;
         double tps[TRACE_MAX_POINT];
         double latency[TRACE_MAX_POINT];
     }trace;

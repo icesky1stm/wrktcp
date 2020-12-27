@@ -37,7 +37,7 @@ LDFLAGS +=
 all: $(BIN) test
 
 clean:
-	$(RM) -rf $(BIN) obj/* *.log 
+	$(RM) -rf $(BIN) obj/* *.log  *.html
 	cd ./test && make clean
 
 $(BIN): $(OBJ)

@@ -7,10 +7,12 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <errno.h>
+#include <stdint.h>
 
 #include "units.h"
 #include "output.h"
 #include "islog.h"
+#include "istime.h"
 #include "outputhtml.h"
 
 static void print_stats_header() {
@@ -99,7 +101,7 @@ int output_console( config * lcfg){
             if( lcfg->trace.tps[i] >=  -0.005 && lcfg->trace.tps[i] <= 0.005){
                 break;
             }
-            printf("  %4llu \bs", i*lcfg->trace.step_time +1);
+            printf("  %4"PRIu64"s", i*lcfg->trace.step_time +1);
             printf("  %9.2lf", lcfg->trace.tps[i]);
             printf("  %10s",  format_time_us(lcfg->trace.latency[i]));
             printf("\n");
@@ -115,6 +117,12 @@ int output_console( config * lcfg){
  */
 int output_html( config * lcfg){
     FILE *fp = NULL;
+    if( strlen(lcfg->htmlfile) == 0){
+        strcpy( lcfg->htmlfile, lcfg->tcpini.file);
+        sprintf( strstr( lcfg->htmlfile, ".ini"), ".%"PRIu64".html", istime_datetime());
+    }
+    printf("Result html :   %s\n",  lcfg->htmlfile);
+
     fp = fopen( lcfg->htmlfile, "w");
     if( fp == NULL){
         islog_error(" open htmlfile error: %s", strerror(errno));
@@ -136,25 +144,19 @@ int output_html( config * lcfg){
     "          '150',\n"
     "        ]\n";
 #endif
-    uint64_t max = lcfg->statistics.requests->max;
-    long double mean  = stats_mean(lcfg->statistics.requests);
-    long double stdev = stats_stdev(lcfg->statistics.requests, mean);
     fprintf(fp,"        tableData: [\n");
     fprintf(fp,"        '%s', \n", "No.1");
     fprintf(fp,"        '%s', \n", lcfg->tcpini.file);
-    fprintf(fp,"        '%llu \bS', \n", lcfg->duration);
-    fprintf(fp,"        '%llu', \n", lcfg->connections);
+    fprintf(fp,"        '%"PRIu64"s', \n", lcfg->duration);
+    fprintf(fp,"        '%"PRIu64"', \n", lcfg->connections);
     /** tps 信息 **/
+    fprintf(fp,"        '%.2Lf', \n", lcfg->result.tps_min);
     fprintf(fp,"        '%.2Lf', \n", lcfg->result.req_success_per_s);
-    fprintf(fp,"        '%s', \n", format_metric10(stdev));
-    fprintf(fp,"        '%s', \n", format_metric10(max));
+    fprintf(fp,"        '%.2Lf', \n", lcfg->result.tps_max);
     /** 响应时间信息 **/
-    max = lcfg->statistics.latency->max;
-    mean  = stats_mean(lcfg->statistics.latency);
-    stdev = stats_stdev(lcfg->statistics.latency, mean);
-    fprintf(fp,"        '%s', \n", format_time_us(mean));
-    fprintf(fp,"        '%s', \n", format_time_us(stdev));
-    fprintf(fp,"        '%s', \n", format_time_us(max));
+    fprintf(fp,"        '%s', \n", format_time_us(lcfg->statistics.latency->min));
+    fprintf(fp,"        '%s', \n", format_time_us(stats_mean(lcfg->statistics.latency)));
+    fprintf(fp,"        '%s', \n", format_time_us(lcfg->statistics.latency->max));
     fprintf(fp,"        ],\n");
     /*** 横坐标轴，时间  ***/
 #if 0
@@ -183,7 +185,7 @@ int output_html( config * lcfg){
     fprintf(fp,"        sendTime: [\n");
     uint64_t i = 0;
     for ( i = 0; i < 100; i++){
-        fprintf(fp,"          '%llu \bs',\n", i*lcfg->trace.step_time + 1);
+        fprintf(fp,"          '%"PRIu64"s',\n", i*lcfg->trace.step_time + 1);
     }
     fprintf(fp,"        ],\n");
     /** tps数据 **/

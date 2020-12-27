@@ -30,7 +30,7 @@ int tcpini_file_load(char * filename, tcpini * tcpini ){
     size_t line_len = 0;
     size_t line_size = 1024;
 
-    if( filename == NULL  && strlen(filename) == 0){
+    if( filename == NULL  && strlen(filename) == 0 && strstr(filename,".ini") != NULL){
         islog_error("tcpini file is error, please check");
         return -5;
     }
