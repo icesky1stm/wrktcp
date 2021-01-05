@@ -57,7 +57,7 @@ static void print_stats_latency(stats *stats) {
 }
 
 /**
- * output_console Êä³ö½á¹ûµ½¿ØÖÆÌ¨ÉÏ
+ * output_console è¾“å‡ºç»“æœåˆ°æ§åˆ¶å°ä¸Š
  * @param lcfg
  * @return
  */
@@ -67,9 +67,9 @@ int output_console( config * lcfg){
     int64_t complete = lcfg->result.complete;
     int64_t bytes = lcfg->result.bytes;
 
-    /** Êä³ö·Ö²¼Í³¼ÆĞÅÏ¢Í· **/
+    /** è¾“å‡ºåˆ†å¸ƒç»Ÿè®¡ä¿¡æ¯å¤´ **/
     print_stats_header();
-    /* Ëõ¶ÌÁË10±¶  */
+    /* ç¼©çŸ­äº†10å€  */
     print_stats("Latency", lcfg->statistics.latency, format_time_us);
     print_stats("Req/Sec", lcfg->statistics.requests, format_metric10);
     if (lcfg->islatency) print_stats_latency(lcfg->statistics.latency);
@@ -87,12 +87,12 @@ int output_console( config * lcfg){
     }
 
     printf("Requests/sec: %9.2Lf ", lcfg->result.req_per_s);
-    /** ĞÂÔöÊ§°ÜµÄÍ³¼Æ **/
+    /** æ–°å¢å¤±è´¥çš„ç»Ÿè®¡ **/
     printf("   (Success:%.2Lf/", lcfg->result.req_success_per_s);
     printf("Failure:%.2Lf)\n", lcfg->result.req_fail_per_s);
     printf("Transfer/sec: %10sB\n", format_binary(lcfg->result.bytes_per_s));
 
-    /** ĞÂÔö¸ú×ÙÇ÷ÊÆÍ³¼Æ **/
+    /** æ–°å¢è·Ÿè¸ªè¶‹åŠ¿ç»Ÿè®¡ **/
     if( lcfg->istrace){
         int i = 0;
         printf("  Trace Details:\n");
@@ -111,7 +111,7 @@ int output_console( config * lcfg){
 }
 
 /**
- * output_html Êä³öµ½htmlÎÄ¼şÖĞ
+ * output_html è¾“å‡ºåˆ°htmlæ–‡ä»¶ä¸­
  * @param lcfg
  * @return
  */
@@ -119,7 +119,7 @@ int output_html( config * lcfg){
     FILE *fp = NULL;
     if( strlen(lcfg->htmlfile) == 0){
         strcpy( lcfg->htmlfile, lcfg->tcpini.file);
-        sprintf( strstr( lcfg->htmlfile, ".ini"), ".%"PRIu64".html", istime_datetime());
+        sprintf( strstr( lcfg->htmlfile, ".ini"), ".%08ld%06ld.html", istime_longdate(), istime_longtime());
     }
     printf("Result html :   %s\n",  lcfg->htmlfile);
 
@@ -129,11 +129,11 @@ int output_html( config * lcfg){
         return -5;
     }
     fprintf(fp, "%s", g_wrk_output_html_head);
-    /***  ±íÍ·Êı¾İ  ***/
+    /***  è¡¨å¤´æ•°æ®  ***/
 #if 0
     "        tableData: [\n"
     "          '1',\n"
-    "          '136·şÎñÆ÷',\n"
+    "          '136æœåŠ¡å™¨',\n"
     "          '60S',\n"
     "          '100',\n"
     "          '1.245',\n"
@@ -149,16 +149,16 @@ int output_html( config * lcfg){
     fprintf(fp,"        '%s', \n", lcfg->tcpini.file);
     fprintf(fp,"        '%"PRIu64"s', \n", lcfg->duration);
     fprintf(fp,"        '%"PRIu64"', \n", lcfg->connections);
-    /** tps ĞÅÏ¢ **/
+    /** tps ä¿¡æ¯ **/
     fprintf(fp,"        '%.2Lf', \n", lcfg->result.tps_min);
     fprintf(fp,"        '%.2Lf', \n", lcfg->result.req_success_per_s);
     fprintf(fp,"        '%.2Lf', \n", lcfg->result.tps_max);
-    /** ÏìÓ¦Ê±¼äĞÅÏ¢ **/
+    /** å“åº”æ—¶é—´ä¿¡æ¯ **/
     fprintf(fp,"        '%s', \n", format_time_us(lcfg->statistics.latency->min));
     fprintf(fp,"        '%s', \n", format_time_us(stats_mean(lcfg->statistics.latency)));
     fprintf(fp,"        '%s', \n", format_time_us(lcfg->statistics.latency->max));
     fprintf(fp,"        ],\n");
-    /*** ºá×ø±êÖá£¬Ê±¼ä  ***/
+    /*** æ¨ªåæ ‡è½´ï¼Œæ—¶é—´  ***/
 #if 0
     "        sendTime: [\n"
 "          '00:00:00',\n"
@@ -188,7 +188,7 @@ int output_html( config * lcfg){
         fprintf(fp,"          '%"PRIu64"s',\n", i*lcfg->trace.step_time + 1);
     }
     fprintf(fp,"        ],\n");
-    /** tpsÊı¾İ **/
+    /** tpsæ•°æ® **/
 #if 0
     "        tpsData: [\n"
 "          '700',\n"
@@ -217,7 +217,7 @@ int output_html( config * lcfg){
         fprintf(fp,"          '%.2lf',\n", lcfg->trace.tps[i]);
     }
     fprintf(fp,"        ],\n");
-    /** latency Êı¾İ **/
+    /** latency æ•°æ® **/
 #if 0
     "        resTimeData: [\n"
     "          '0.7',\n"
@@ -247,7 +247,7 @@ int output_html( config * lcfg){
     }
     fprintf(fp,"        ]\n");
 
-    /** ´òÓ¡½áÎ² **/
+    /** æ‰“å°ç»“å°¾ **/
     fprintf(fp, "%s", g_wrk_output_html_tail);
     fclose(fp);
     return 0;

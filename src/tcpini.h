@@ -6,7 +6,9 @@
 #define TCPINI_H
 
 #define TCPINI_MAX_PARANUM 20
-#define  TCPINIFILE_MAX_LENGTH 256
+#define TCPINIFILE_MAX_LENGTH 256
+
+#include <pthread.h>
 
 typedef struct _a_para{
     char key[32];
@@ -18,6 +20,7 @@ typedef struct _a_para{
         TCPINI_P_DATETIME
     }type;
     char *value;
+    pthread_mutex_t mutex;
     char format[128];
 } a_para;
 
@@ -34,7 +37,6 @@ typedef struct _tcpini_content {
     }section;
 
     /** «Î«Û–≈œ¢ request **/
-
     int req_len_len;
     char *req_head;
     char *req_body;
@@ -72,7 +74,7 @@ typedef struct _tcpini_content {
 } tcpini;
 
 int tcpini_file_load(char * filename, tcpini * tcpini );
-int tcpini_request_parser(tcpini *tcpini, char **request, long *length );
+int tcpini_request_parser(tcpini *tcpini, char **request, long *length, void * data);
 int tcpini_response_init(void * data);
 int tcpini_response_parser(void * data, char * buf, size_t n);
 int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body);

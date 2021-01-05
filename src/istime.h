@@ -4,25 +4,23 @@
 
 #ifndef ISTIME_H
 #define ISTIME_H
+#include <inttypes.h>
 
-#define ISTIME_VERSION 20201226
+#define ISTIME_VERSION_NO "21.01.1"
+char * istime_version();
 
-/** È¡µ±Ç°Ê±¼äµÄºÁÃëÊı **/
+/** å–å½“å‰æ—¶é—´çš„æ¯«ç§’æ•° **/
 uint64_t istime_us();
 
-/** È¡µ±Ê±Ê±¼äµÄÃëÊı **/
-uint64_t istime_s();
+/** æ ¹æ®time_uså¾®ç§’ä¿¡æ¯ï¼Œç”ŸæˆISO8601çš„æ ‡å‡†æ—¥æœŸæ—¶é—´æ ¼å¼, å…¶å®ç§’ä»¥ä¸‹æ˜¯èˆå¼ƒçš„ **/
+char * istime_iso8601(char * strtime, uint32_t maxsize, uint64_t time_us);
 
-/**  È¡µ±Ç°Ê±¼äµÄÄÉÃëÊı£¬×¢Òâ¸Ã³ÌĞò500Äêºó»áÊ§Ğ§£¬ÒòÎª»á³¬¹ıuint64µÄ×î´ó³¤¶È **/
-uint64_t istime_ns();
+uint32_t istime_strftime(char * strtime, uint32_t maxsize, const char * format, uint64_t time_us);
 
-/** »ñÈ¡µ±ÈÕµÄÊ±¼äĞÅÏ¢£¬6Î»³¤ **/
-uint64_t istime_time();
+/** è·å–å½“æ—¥çš„æ—¶é—´ä¿¡æ¯ï¼Œ6ä½é•¿ **/
+long istime_longtime();
 
-/** »ñÈ¡µ±ÈÕµÄÈÕÆÚ£¬8Î»³¤ **/
-uint64_t istime_date();
-
-/** »ñÈ¡µ±ÈÕµÄÈÕÆÚ+Ê±¼ä£¬ 14Î»³¤ **/
-uint64_t istime_datetime();
+/** è·å–å½“æ—¥çš„æ—¥æœŸï¼Œ8ä½é•¿ **/
+long istime_longdate();
 
 #endif //ISTIME_H

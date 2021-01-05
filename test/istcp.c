@@ -12,19 +12,27 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <time.h>
-/* af_unix,ÓòsocketÊ¹ÓÃ */
 #include <sys/un.h>
 
 #include "istcp.h"
+#include <errno.h>
+
+/* nginx & redis, default value is 511 */
+#define ISTCP_DEFAULT_BACKLOG 511
+#define ISTCP_DEFAULT_TIMEOUT 60
+
+char * istcp_version(){
+    return ISTCP_VERSION_NO;
+}
 
 
-/*** ¹Ø±Õsocket ***/
+/*** å…³é—­socket ***/
 void istcp_close(int sock){
    close(sock);
    return;
 }
 
-/*** ÉêÇësocket²¢Á¬½Ó ***/
+/*** ç”³è¯·socketå¹¶è¿æ¥ ***/
 int istcp_connect(char *ip,  int port){
     struct sockaddr_in sin;
     int sock;
@@ -47,34 +55,7 @@ int istcp_connect(char *ip,  int port){
     return sock;
 }
 
-/*** unixÓòsocket ***/
-int istcp_connect_unix(char *pathname)
-{
-    int sock;
-    struct sockaddr_un sun;
-
-    memset(&sun, 0x00, sizeof(sun));
-
-    sun.sun_family = AF_UNIX;
-    if( strlen( pathname) >= sizeof(sun.sun_path)){
-        return ISTCP_ERROR_UNIXPATH_TOOLONG;
-    };
-    strcpy (sun.sun_path, pathname);
-
-    if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0){
-        return ISTCP_ERROR_SOCKET;
-    }
-
-    if (connect(sock, (struct sockaddr *)&sun, sizeof(sun)) < 0){
-        close(sock);
-        return ISTCP_ERROR_CONNECT;
-    }
-
-    return sock;
-
-}
-
-/*** °´³¬Ê±Ê±¼ä½ÓÊÕ¹Ì¶¨³¤¶ÈÄÚÈİ  ***/
+/*** æŒ‰è¶…æ—¶æ—¶é—´æ¥æ”¶å›ºå®šé•¿åº¦å†…å®¹  ***/
 static int istcp_timeflag = 0 ;
 static void istcpSetalm(int timeout) {
     alarm(timeout) ;
@@ -101,7 +82,7 @@ int istcp_recv(int sock, char *msgbuf, int len, int timeout){
 
     lStartTime = lCurrentTime = 0;
 
-    /* ÉèÖÃ³¬Ê±Ê±¼ä */
+    /* è®¾ç½®è¶…æ—¶æ—¶é—´ */
     if (timeout <= 0){
         tv.tv_sec  = 0;
         tv.tv_usec = 0;
@@ -110,10 +91,10 @@ int istcp_recv(int sock, char *msgbuf, int len, int timeout){
         tv.tv_usec = 0;
     }
 
-    /* ÉèÖÃnfds = 1£¬ ¼ì²éµ±Ç°sock */
+    /* è®¾ç½®nfds = 1ï¼Œ æ£€æŸ¥å½“å‰sock */
     nfds = sock + 1;
 
-    /* ³õÊ¼»¯readfds, ²¢½«µ±Ç°sock¼ÓÈë */
+    /* åˆå§‹åŒ–readfds, å¹¶å°†å½“å‰sockåŠ å…¥ */
     FD_ZERO(&readfds);
     FD_SET(sock, &readfds);
 
@@ -123,17 +104,17 @@ int istcp_recv(int sock, char *msgbuf, int len, int timeout){
     if (ret < 0){
         return ISTCP_ERROR_SELECT;
     }else if (ret == 0){
-        /* ³¬Ê±Ê±¼äµ½ */
+        /* è¶…æ—¶æ—¶é—´åˆ° */
         return ISTCP_ERROR_TIMEOUT;
     }
 
 
-    /* Òì³£´íÎó */
+    /* å¼‚å¸¸é”™è¯¯ */
     if (!FD_ISSET(sock, &readfds)){
         return ISTCP_ERROR_SELECT;
     }
 
-    /* ¿ªÊ¼½ÓÊÕÊı¾İ°ü */
+    /* å¼€å§‹æ¥æ”¶æ•°æ®åŒ… */
     iSize = len ;
     while(iSize > 0){
         if (timeout > 0){
@@ -164,10 +145,10 @@ int istcp_recv(int sock, char *msgbuf, int len, int timeout){
             msgbuf += ret;
         }
     }
-    return 0;
+    return len;
 }
 
-/*** °´³¬Ê±Ê±¼äµÈ´ı,ÊÔÍ¼¶ÁÒ»´Î½ÓÊÕ¹Ì¶¨³¤¶ÈÄÚÈİ£¬·µ»ØÊµ¼Ê¶ÁÈ¡³¤¶È,²»¿É¿¿µÄÍ¨Ñ¶Ä£Ê½£¬½öÓÃÓÚ¶Ô·½ÎŞ·¨Ô¼¶¨±¨ÎÄ³¤¶ÈÊ±Ê¹ÓÃ ***/
+/*** æŒ‰è¶…æ—¶æ—¶é—´ç­‰å¾…,è¯•å›¾è¯»ä¸€æ¬¡æ¥æ”¶å›ºå®šé•¿åº¦å†…å®¹ï¼Œè¿”å›å®é™…è¯»å–é•¿åº¦,ä¸å¯é çš„é€šè®¯æ¨¡å¼ï¼Œä»…ç”¨äºå¯¹æ–¹æ— æ³•çº¦å®šæŠ¥æ–‡é•¿åº¦æ—¶ä½¿ç”¨ ***/
 int istcp_recv_nowait(int sock, char *msgbuf, int len, int timeout){
     int ret;
     int nfds;
@@ -179,7 +160,7 @@ int istcp_recv_nowait(int sock, char *msgbuf, int len, int timeout){
 
     lStartTime = lCurrentTime = 0;
 
-    /* ÉèÖÃ³¬Ê±Ê±¼ä */
+    /* è®¾ç½®è¶…æ—¶æ—¶é—´ */
     if (timeout <= 0){
         tv.tv_sec  = 0;
         tv.tv_usec = 0;
@@ -188,10 +169,10 @@ int istcp_recv_nowait(int sock, char *msgbuf, int len, int timeout){
         tv.tv_usec = 0;
     }
 
-    /* ÉèÖÃnfds = 1£¬ ¼ì²éµ±Ç°sock */
+    /* è®¾ç½®nfds = 1ï¼Œ æ£€æŸ¥å½“å‰sock */
     nfds = sock + 1;
 
-    /* ³õÊ¼»¯readfds, ²¢½«µ±Ç°sock¼ÓÈë */
+    /* åˆå§‹åŒ–readfds, å¹¶å°†å½“å‰sockåŠ å…¥ */
     FD_ZERO(&readfds);
     FD_SET(sock, &readfds);
 
@@ -202,16 +183,16 @@ int istcp_recv_nowait(int sock, char *msgbuf, int len, int timeout){
         return ISTCP_ERROR_SELECT;
     }
     else if (ret == 0){
-        /* ³¬Ê±Ê±¼äµ½ */
+        /* è¶…æ—¶æ—¶é—´åˆ° */
         return ISTCP_ERROR_TIMEOUT;
     }
 
-    /* Òì³£´íÎó */
+    /* å¼‚å¸¸é”™è¯¯ */
     if (!FD_ISSET(sock, &readfds)){
         return ISTCP_ERROR_SELECT;
     }
 
-    /* ¿ªÊ¼½ÓÊÕÊı¾İ°ü */
+    /* å¼€å§‹æ¥æ”¶æ•°æ®åŒ… */
     iSize = len;
     if (timeout > 0){
         time(&lCurrentTime);
@@ -231,8 +212,7 @@ int istcp_recv_nowait(int sock, char *msgbuf, int len, int timeout){
     return ret;
 }
 
-
-/*** °´³¤¶È·¢ËÍÄÚÈİ ***/
+/*** æŒ‰é•¿åº¦å‘é€å†…å®¹ ***/
 int istcp_send(int sock, char *msgbuf, int len, int timeout){
     int    ret;
     int    nfds;
@@ -243,7 +223,7 @@ int istcp_send(int sock, char *msgbuf, int len, int timeout){
 
     lStartTime = lCurrentTime = 0;
 
-    /* ÉèÖÃ³¬Ê±Ê±¼ä */
+    /* è®¾ç½®è¶…æ—¶æ—¶é—´ */
     if (timeout <= 0){
         tv.tv_sec  = 0;
         tv.tv_usec = 0;
@@ -254,10 +234,10 @@ int istcp_send(int sock, char *msgbuf, int len, int timeout){
 
     time(&lStartTime);
 
-    /* ÉèÖÃnfds = 1, ¼ì²éµ±Ç°sock */
+    /* è®¾ç½®nfds = 1, æ£€æŸ¥å½“å‰sock */
     nfds = sock + 1;
 
-    /* ³õÊ¼»¯writefds, ²¢½«µ±Ç°sock¼ÓÈë */
+    /* åˆå§‹åŒ–writefds, å¹¶å°†å½“å‰sockåŠ å…¥ */
     FD_ZERO(&writefds);
     FD_SET(sock, &writefds);
 
@@ -265,11 +245,11 @@ int istcp_send(int sock, char *msgbuf, int len, int timeout){
     if (ret < 0){
         return ISTCP_ERROR_SELECT;
     }else if (ret == 0){
-        /* ³¬Ê±Ê±¼äµ½ */
+        /* è¶…æ—¶æ—¶é—´åˆ° */
         return ISTCP_ERROR_TIMEOUT;
     }
 
-    /* Òì³£´íÎó */
+    /* å¼‚å¸¸é”™è¯¯ */
     if (!FD_ISSET(sock, &writefds)){
         return ISTCP_ERROR_SELECT;
     }
@@ -292,16 +272,16 @@ int istcp_send(int sock, char *msgbuf, int len, int timeout){
         }
     }
 
-    return 0;
+    return len;
 
 }
 
-/** accept»ñÈ¡ĞÂÁ¬½Ó **/
+/** acceptè·å–æ–°è¿æ¥ **/
 int istcp_accept( int sock){
     return istcp_accept_gethost( sock, NULL);
 }
 
-/** »ñÈ¡ĞÂÁ¬½Ó²¢È¡µÃÇëÇóĞÅÏ¢ **/
+/** è·å–æ–°è¿æ¥å¹¶å–å¾—è¯·æ±‚ä¿¡æ¯ **/
 int istcp_accept_gethost(int sock, char * *p_hostip) {
     int acceptSock;
     socklen_t len = 0;
@@ -312,7 +292,7 @@ int istcp_accept_gethost(int sock, char * *p_hostip) {
     if (acceptSock < 0){
         return ISTCP_ERROR_ACCEPT;
     }
-    /* Èç¹û²»ĞèÒª£¬ÔòÖ±½Ó¸³Öµ */
+    /* å¦‚æœä¸éœ€è¦ï¼Œåˆ™ç›´æ¥èµ‹å€¼ */
     if( p_hostip != NULL){
         *p_hostip = inet_ntoa(sin.sin_addr);
     }
@@ -320,7 +300,7 @@ int istcp_accept_gethost(int sock, char * *p_hostip) {
     return acceptSock;
 }
 
-/** ´øbacklog¶ÓÁĞ´óĞ¡µÄ°ó¶¨¶Ë¿ÚºÍ¼àÌı **/
+/** å¸¦backlogé˜Ÿåˆ—å¤§å°çš„ç»‘å®šç«¯å£å’Œç›‘å¬ **/
 int istcp_listen_backlog(char *hostname, int port, int backlog){
     struct hostent *h;
     struct sockaddr_in sin;
@@ -333,7 +313,7 @@ int istcp_listen_backlog(char *hostname, int port, int backlog){
     memset(&sin, 0x00, sizeof(sin));
 
     if (hostname != NULL) {
-        /** Èç¹ûÊÇipµØÖ·ÀàĞÍ£¬ÔòÖ±½Ó¸³Öµ **/
+        /** å¦‚æœæ˜¯ipåœ°å€ç±»å‹ï¼Œåˆ™ç›´æ¥èµ‹å€¼ **/
         if( 4 == sscanf(hostname, "%d.%d.%d.%d",&ip1, &ip2, &ip3, &ip4)){
             if (0<=ip1 && ip1<=255
                 && 0<=ip2 && ip2<=255
@@ -342,7 +322,7 @@ int istcp_listen_backlog(char *hostname, int port, int backlog){
                 sin.sin_addr.s_addr = inet_addr(hostname);
             }
         } else {
-            /** Èç¹û²»ÊÇipµØÖ·ÀàĞÍ£¬ÔòÈ¡DNSĞÅÏ¢ **/
+            /** å¦‚æœä¸æ˜¯ipåœ°å€ç±»å‹ï¼Œåˆ™å–DNSä¿¡æ¯ **/
             h = gethostbyname(hostname);
             if (h == NULL){
                 sin.sin_addr.s_addr = inet_addr(hostname);
@@ -351,7 +331,7 @@ int istcp_listen_backlog(char *hostname, int port, int backlog){
             }
         }
     }else{
-        sin.sin_addr.s_addr = INADDR_ANY; /*±¾»úIP*/
+        sin.sin_addr.s_addr = INADDR_ANY; /*æœ¬æœºIP*/
     }
 
     sin.sin_port = htons(port);
@@ -382,8 +362,76 @@ int istcp_listen_backlog(char *hostname, int port, int backlog){
     return sock;
 }
 
-/** ±ê×¼°ó¶¨¼àÌı·şÎñ **/
-int istcp_listen(char *hostname, int port){
-    return istcp_listen_backlog( hostname, port, 10);
+/** æ ‡å‡†ç»‘å®šç›‘å¬æœåŠ¡ **/
+int istcp_listen(int port){
+    return istcp_listen_backlog( "127.0.0.1", port, ISTCP_DEFAULT_BACKLOG);
 }
 
+/** unixåŸŸsocket **/
+int istcp_listen_unix(char *pathname){
+
+    int ret;
+    int sock;
+    int optLen, optVar;
+    struct sockaddr_un sun;
+
+    /** å…ˆåˆ¤æ–­é•¿åº¦æ˜¯å¦è¶…é™ **/
+    if( strlen( pathname) >= sizeof(sun.sun_path)){
+        return ISTCP_ERROR_UNIXPATH_TOOLONG;
+    }
+
+    memset(&sun, 0x00, sizeof(sun));
+    sun.sun_family= AF_UNIX;
+    strcpy( sun.sun_path, pathname);
+
+    if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0){
+        return ISTCP_ERROR_SOCKET;
+    }
+
+    /** åˆ é™¤åŸä¿¡æ¯ **/
+    remove( sun.sun_path);
+    optVar = 1;
+    optLen = sizeof(optVar);
+    ret = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&optVar, optLen);
+    if (ret < 0){
+        return ISTCP_ERROR_SETSOCKOPT;
+    }
+
+    if (bind(sock, (struct sockaddr *)&sun, sizeof(sun)) < 0){
+        close(sock);
+        return ISTCP_ERROR_BIND;
+    }
+
+    if (listen(sock, ISTCP_DEFAULT_BACKLOG) < 0){
+        close(sock);
+        return ISTCP_ERROR_LISTEN;
+    }
+
+    return sock;
+}
+
+int istcp_connect_unix(char *pathname)
+{
+    int sock;
+    struct sockaddr_un sun;
+
+    memset(&sun, 0x00, sizeof(sun));
+
+    sun.sun_family = AF_UNIX;
+    if( strlen( pathname) >= sizeof(sun.sun_path)){
+        return ISTCP_ERROR_UNIXPATH_TOOLONG;
+    }
+    strcpy (sun.sun_path, pathname);
+
+    if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0){
+        return ISTCP_ERROR_SOCKET;
+    }
+
+    if (connect(sock, (struct sockaddr *)&sun, sizeof(sun)) < 0){
+        close(sock);
+        return ISTCP_ERROR_CONNECT;
+    }
+
+    return sock;
+
+}

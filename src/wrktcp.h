@@ -15,21 +15,22 @@
 
 #define RECVBUF  8192
 
-/** ×î´óÖ§³ÖµÄTPS/10, Ä¿Ç°µÄÊÇ 100W **/
+/** æœ€å¤§æ”¯æŒçš„TPS/10, ç›®å‰çš„æ˜¯ 100W **/
 #define MAX_THREAD_RATE_S   10000000
-/** ³¬Ê±Ê±¼ä,ÉèÖÃµÄÔ½´ó£¬Õ¼ÓÃµÄ¿Õ¼äÔ½´ó **/
+/** è¶…æ—¶æ—¶é—´,è®¾ç½®çš„è¶Šå¤§ï¼Œå ç”¨çš„ç©ºé—´è¶Šå¤§ **/
 #define SOCKET_TIMEOUT_MS   5000
-/** ²ÉÑù¼ä¸ôÊ±¼ä **/
+/** é‡‡æ ·é—´éš”æ—¶é—´ **/
 #define RECORD_INTERVAL_MS  100
-/** ×î´ó¸ú×Ù¼ÇÂ¼µã **/
+/** æœ€å¤§è·Ÿè¸ªè®°å½•ç‚¹ **/
 #define TRACE_MAX_POINT 100
-/** Êä³öÎÄ¼ş×î´ó³¤¶È **/
+/** è¾“å‡ºæ–‡ä»¶æœ€å¤§é•¿åº¦ **/
 #define MAX_HTML_FILELEN 512
 
 
 typedef struct {
     pthread_t thread;
-    int tno;
+    long tno;
+    struct config *lcfg;
     aeEventLoop *loop;
     uint64_t connections;
     uint64_t complete;
@@ -43,19 +44,20 @@ typedef struct {
 } thread;
 
 typedef struct connection {
+    struct config *lcfg;
     thread *thread;
-    /** Á¬½ÓÊı¾İ **/
+    /** è¿æ¥æ•°æ® **/
     long cno;
     int fd;
-    bool delayed;
-    uint64_t start; /*Í³¼ÆÊ±¼ä£¬¿ªÊ¼*/
+    char delayed;
+    uint64_t start; /*ç»Ÿè®¡æ—¶é—´ï¼Œå¼€å§‹*/
     tcpini *tcpini;
-    /** ÇëÇóÊı¾İ **/
-    char *request; /*ÇëÇóÕûÌå*/
-    long length; /*ÇëÇó³¤¶È*/
-    long written; /*ÒÑ·¢ËÍ³¤¶È*/
+    /** è¯·æ±‚æ•°æ® **/
+    char *request; /*è¯·æ±‚æ•´ä½“*/
+    long length; /*è¯·æ±‚é•¿åº¦*/
+    long written; /*å·²å‘é€é•¿åº¦*/
     uint64_t pending; /*pipeline*/
-    /** Ó¦´ğÊı¾İ **/
+    /** åº”ç­”æ•°æ® **/
     char buf[RECVBUF];
     unsigned long readlen;
     enum{
@@ -66,23 +68,23 @@ typedef struct connection {
     char * rsp_body;
 } connection;
 
-/** wrkµÄÕûÌå»ã×ÜÊı¾İ **/
+/** wrkçš„æ•´ä½“æ±‡æ€»æ•°æ® **/
 typedef struct config {
-    uint64_t connections;   //Á¬½ÓÊı
-    uint64_t duration;      //³ÖĞøÊ±¼ä-Ãë
-    uint64_t threads;       //Ïß³ÌÊı
-    uint64_t timeout;       //³¬Ê±Ê±¼ä
-    uint64_t pipeline;      //¶à´Î·¢ËÍ£¬ÔİÊ±Ã»ÓĞÓÃ
-    char isdelay;         //ÊÇ·ñ ÑÓ³Ù·¢ËÍ
-    char isdynamic;       //ÊÇ·ñ ÓĞ¶¯Ì¬Ä£°å
-    char islatency;       //ÊÇ·ñ ´òÓ¡ÏìÓ¦Ê±¼ä
-    char istrace;         //ÊÇ·ñ ´òÓ¡traceÃ÷Ï¸
-    char ishtml;          //ÊÇ·ñ Êä³öÎÄ¼ş
-    char htmlfile[MAX_HTML_FILELEN];     //Êä³öhtmlÎÄ¼şÃû
-    thread * p_threads;     //Ïß³ÌµÄÄÚÈİ
-    /** tcp±¨ÎÄµÄ½á¹¹ÅäÖÃĞÅÏ¢ **/
+    uint64_t connections;   //è¿æ¥æ•°
+    uint64_t duration;      //æŒç»­æ—¶é—´-ç§’
+    uint64_t threads;       //çº¿ç¨‹æ•°
+    uint64_t timeout;       //è¶…æ—¶æ—¶é—´
+    uint64_t pipeline;      //å¤šæ¬¡å‘é€ï¼Œæš‚æ—¶æ²¡æœ‰ç”¨
+    char isdelay;         //æ˜¯å¦ å»¶è¿Ÿå‘é€
+    char isdynamic;       //æ˜¯å¦ æœ‰åŠ¨æ€æ¨¡æ¿
+    char islatency;       //æ˜¯å¦ æ‰“å°å“åº”æ—¶é—´
+    char istrace;         //æ˜¯å¦ æ‰“å°traceæ˜ç»†
+    char ishtml;          //æ˜¯å¦ è¾“å‡ºæ–‡ä»¶
+    char htmlfile[MAX_HTML_FILELEN];     //è¾“å‡ºhtmlæ–‡ä»¶å
+    thread * p_threads;     //çº¿ç¨‹çš„å†…å®¹
+    /** tcpæŠ¥æ–‡çš„ç»“æ„é…ç½®ä¿¡æ¯ **/
     tcpini  tcpini;
-    /*** ½á¹û¼ÇÂ¼£¬»ã×ÜµÄ½á¹ûÊı¾İ ***/
+    /*** ç»“æœè®°å½•ï¼Œæ±‡æ€»çš„ç»“æœæ•°æ® ***/
     struct _result{
         int64_t complete;
         int64_t bytes;
@@ -98,12 +100,12 @@ typedef struct config {
         long double tps_min;
         long double tps_max;
     }result;
-    /** ·Ö²¼Í³¼Æ,¼ÆËãÆ½¾ùÖµ·½²îµÈ **/
+    /** åˆ†å¸ƒç»Ÿè®¡,è®¡ç®—å¹³å‡å€¼æ–¹å·®ç­‰ **/
     struct _statistics{
         stats *latency;
         stats *requests;
     } statistics;
-    /** ×·×ÙÍ³¼Æ£¬¼ÇÂ¼Ê±¼ä±ä»¯Ç÷ÊÆ **/
+    /** è¿½è¸ªç»Ÿè®¡ï¼Œè®°å½•æ—¶é—´å˜åŒ–è¶‹åŠ¿ **/
     struct _trace{
         int64_t step_time;
         int use_num;

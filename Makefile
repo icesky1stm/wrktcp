@@ -22,7 +22,7 @@ endif
 
 SRC  := wrktcp.c net.c aprintf.c stats.c units.c \
 		ae.c zmalloc.c islog.c tcpini.c istime.c \
-		output.c
+		output.c isstr.c
 BIN  := wrktcp
 
 ODIR := obj

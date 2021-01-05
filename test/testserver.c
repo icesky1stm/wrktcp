@@ -17,7 +17,7 @@
 
 #include "istcp.h"
 
-#define USLEEP_TIME 10000
+#define USLEEP_TIME 1
 
 static int	icesky_rcv(int argc, char *argv[]);
 
@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
 	sigset(SIGUSR1,exit_server) ;/*用户自定义退出信号，则退出*/
 
 	/** 开始监听信息 **/
-	if( (sock = istcp_listen_backlog(NULL, portnum, 1024)) < 0){
+	if( (sock = istcp_listen_backlog("127.0.0.1", portnum, 1024)) < 0){
         perror("socket");
         printf("--->%s,%d create sock error!!!", __FILE__, __LINE__);
         exit(1);
@@ -130,9 +130,9 @@ int main(int argc, char *argv[])
             }
             /*** 判断报文类型 ***/
             if( strncmp( head, "XML", 3) == 0){
-                pkgtype = pkgtype_xml
+                pkgtype = pkgtype_xml;
             }else if( strncmp( head, "JSON", 4) == 0){
-                pkgtype = pkgtype_json
+                pkgtype = pkgtype_json;
             }else if( strncmp( head, "POST", 4) == 0){
                 pkgtype = pkgtype_http;
             }else{
@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
                     }
                     /* 等待 */
                     usleep(USLEEP_TIME);
-                    strcpy(response,"XMLHEAD0000005120201231<root><head><retCode>000001</retCode></head></root>");
+                    strcpy(response,"XMLHEAD0000005120201231<root><head><retCode>000000</retCode></head></root>");
                     if ( istcp_send( newsock, response, strlen(response), 10)<0){
                         printf( "[%d]send msg error![%d]", conn_num, newsock);
                         exit(1);
@@ -184,9 +184,11 @@ int main(int argc, char *argv[])
                     printf( "XML ConnNum:[%d] RECV:[%s%s]\n", conn_num, head, msg);
                     break;
                 case pkgtype_json:
-                    printf( "JSON ConnNum:[%d] RECV:[%s%s]\n", conn_num, head, msg);
+                    //TODO
+//                    printf( "JSON ConnNum:[%d] RECV:[%s%s]\n", conn_num, head, msg);
                     break;
                 case pkgtype_http:
+                    //TODO
                     break;
                 default:
                     printf( "[%d]recv msg error!![%d]", conn_num, newsock);

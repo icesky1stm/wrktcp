@@ -13,22 +13,27 @@
 #include "islog.h"
 #include "wrktcp.h"
 
+#include "isstr.h"
+#include "istime.h"
+
+#include <pthread.h>
+
 #define INI_LENGTH "$(length)"
-static char *strtrim(char *str);
+
 
 /***********************************
- * Ò»¡¢ÅäÖÃ¼ÓÔØ²¿·Ö
+ * ä¸€ã€é…ç½®åŠ è½½éƒ¨åˆ†
  ***********************************/
 static int tcpini_check( tcpini * tcpini);
 static int tcpini_init( tcpini * tcpini);
 static int line_parser(char *line, tcpini * tcpini);
 
-/** ¼ÓÔØÅäÖÃÎÄ¼şµ½ÅäÖÃÖĞ **/
+/** åŠ è½½é…ç½®æ–‡ä»¶åˆ°é…ç½®ä¸­ **/
 int tcpini_file_load(char * filename, tcpini * tcpini ){
     FILE *fp = NULL;
     char *line = NULL;
-    size_t line_len = 0;
-    size_t line_size = 1024;
+    int line_len = 0;
+    int line_size = 1024;
 
     if( filename == NULL  && strlen(filename) == 0 && strstr(filename,".ini") != NULL){
         islog_error("tcpini file is error, please check");
@@ -46,52 +51,70 @@ int tcpini_file_load(char * filename, tcpini * tcpini ){
         goto error;
     }
 
-    /** ³õÊ¼»¯²¢ÉêÇëÄÚ´æ **/
+    /** åˆå§‹åŒ–å¹¶ç”³è¯·å†…å­˜ **/
     if( tcpini_init( tcpini) != 0){
         islog_error("tcpini_init is error ");
         goto error;
     }
 
-    /** Ñ­»·¶ÁÈ¡ÎÄ¼şÄÚÈİ,½øĞĞ´¦ÀíºÍ½âÎö **/
+    /** å¾ªç¯è¯»å–æ–‡ä»¶å†…å®¹,è¿›è¡Œå¤„ç†å’Œè§£æ **/
     memset( line, 0x00, sizeof(line_size));
     while( fgets( line+line_len , line_size - line_len, fp) != NULL){
-        /*** ÏÈ¶ÔÅäÖÃÎÄ¼ş×ö´¦Àí ***/
+        /*** å…ˆå¯¹é…ç½®æ–‡ä»¶åšå¤„ç† ***/
         if( line[0] == '#'){
             line_len = 0;
             continue;
         }
-        /*** Ìæ»»×îºóµÄ\nÎª½áÊø·û£¬Èç¹ûÓĞ\nµÄ»° ***/
+        /*** æ›¿æ¢æœ€åçš„\nä¸ºç»“æŸç¬¦ï¼Œå¦‚æœæœ‰\nå¹¶ä¸”ä¸æ˜¯\è½¬ä¹‰çš„è¯ ***/
+        /*** TODO
+         * æ­¤å¤„çš„å†™æ³•æœ‰äº›å¤æ‚ï¼Œåº”è¯¥è¿½æ±‚ç®€å•ï¼ŒæŠŠæ¯ç§æƒ…å†µåˆ—å‡ºæ¥ï¼Œä¸è¦åœ¨æ„ä»£ç å†—ä½™
+         * é€»è¾‘æ¸…æ™°çš„ä»£ç æ¯”çœ‹èµ·æ¥ç®€æ´çš„ä»£ç æ›´é‡è¦
+         * ä¸€å…±åˆ†ä¸¤ç±»å…±4ç§åœºæ™¯ï¼š
+         *  ä¸€ã€ è¯»åˆ°äº† \n
+         *      1.1 æ˜¯æ­£å¸¸çš„ç»“æŸï¼Œ åŠ \0å³å¯
+         *      1.2 åˆ¤æ–­å‰é¢æ˜¯å¦æœ‰\è½¬ä¹‰, å¯èƒ½ä¸‹ä¸€è¡Œè¿˜æœ‰,éœ€è¦æ‰©å¤§å†…å­˜é‡æ–°è¯»
+         *  äºŒã€ æœªè¯»åˆ° \n
+         *      2.1 å•è¡Œå¤ªé•¿ï¼Œè¶…è¿‡1024äº†ï¼Œéœ€è¦æ‰©å¤§å†…å®¹é‡æ–°è¯»
+         *      2.2 æ˜¯æ–‡ä»¶æœ€åä¸€è¡Œï¼Œä¸”æ²¡æœ‰æ¢è¡Œ, éœ€è¦ç›´æ¥å°±ç»“æŸåŠ \0
+         */
         line_len = strlen(line);
-        if (line[line_len - 1] == '\n') {
+        if (line[line_len - 1] == '\n' && line[line_len - 2] != '\\') {
             line[line_len - 1] = '\0';
         }else{
-            /*** Èç¹û²»ÊÇ\n£¬ÔòËµÃ÷ºÜ³¤£¬Ö¸ÊıÀ©ÈİÔÙ´Î¶ÁÈ¡ ***/
+            /*** å¦‚æœä¸æ˜¯\næˆ–è€…æœ‰\\ï¼Œåˆ™è¯´æ˜å¾ˆé•¿ï¼ŒæŒ‡æ•°æ‰©å®¹å†æ¬¡è¯»å– ***/
             line_size = line_size * 2;
             line = zrealloc(line, line_size);
             if( line == NULL){
                 islog_error("can't realloc line size, [%s]", strerror(errno));
                 goto error;
             }
-            /* À©Õ¹³¤¶Èºó, ¼ÌĞø¶ÁÈ¡ºóĞøÄÚÈİ */
+            /** æŠŠ \\æ›¿æ¢æ‰,æ”¯æŒ\\è½¬ä¹‰æ¢è¡Œ **/
+            if( line[line_len - 2] == '\\' ){
+                line[line_len - 2] = '\n';
+                line[line_len - 1] = '\0';
+                line_len = strlen(line);
+            }
+            /* æ‰©å±•é•¿åº¦å, ç»§ç»­è¯»å–åç»­å†…å®¹ */
             continue;
         }
-        /*** ¿ÕĞĞ¶¼ĞèÒªÌø¹ı ***/
+        /*** ç©ºè¡Œéƒ½éœ€è¦è·³è¿‡ ***/
         if( line[0] == '\0') {
             line_len = 0;
             continue;
         }
-        strtrim(line);
+        isstr_trim(line);
 
+        islog_debug("have read line [%s]", line);
         if(line_parser(line, tcpini) != 0){
             islog_error("parser line error!!!");
             goto error;
         }
 
-        /*** »Ö¸´Ñ­»·¹Ø¼ü×Ö¶Î,Î»ÒÆ ***/
+        /*** æ¢å¤å¾ªç¯å…³é”®å­—æ®µ,ä½ç§» ***/
         line_len = 0;
    }
 
-    /*** Ğ£ÑéÅäÖÃÊÇ·ñÕıÈ· ***/
+    /*** æ ¡éªŒé…ç½®æ˜¯å¦æ­£ç¡® ***/
     if( tcpini_check(tcpini) != 0){
         islog_error("tcpini config check error!!!");
         goto error;
@@ -107,9 +130,9 @@ int tcpini_file_load(char * filename, tcpini * tcpini ){
     return -5;
 }
 
-/* ÅäÖÃÄÚÈİ¼ì²é */
+/* é…ç½®å†…å®¹æ£€æŸ¥ */
 static int tcpini_check( tcpini * tcpini){
-    /** Ğ£Ñé¸÷ÖÖĞÅÏ¢µÄºÏ·¨ĞÔ **/
+    /** æ ¡éªŒå„ç§ä¿¡æ¯çš„åˆæ³•æ€§ **/
     if(tcpini->host == NULL || strlen(tcpini->host) < 6){
         islog_error("item host mush be config!!!");
         return -30;
@@ -151,9 +174,9 @@ static int tcpini_check( tcpini * tcpini){
     return 0;
 }
 
-/* ÅäÖÃĞÅÏ¢³õÊ¼»¯ */
+/* é…ç½®ä¿¡æ¯åˆå§‹åŒ– */
 static int tcpini_init( tcpini * tcpini){
-    /** Éè¶¨³õÊ¼Öµ **/
+    /** è®¾å®šåˆå§‹å€¼ **/
     tcpini->section = S_COMMON;
     tcpini->req_len_len = 8;
     tcpini->req_len_type = TCPINI_REQ_LENTYPE_BODY;
@@ -176,15 +199,15 @@ static int tcpini_init( tcpini * tcpini){
     return 0;
 }
 
-/* ½âÎöÅäÖÃÎÄ¼şµÄ¾ßÌåĞĞ */
+/* è§£æé…ç½®æ–‡ä»¶çš„å…·ä½“è¡Œ */
 static int line_parser(char *line, tcpini * tcpini){
     char name[32];
     char * pline = NULL;
-
+    char * q = NULL;
     memset( name, 0x00, sizeof( name));
-    /** ´Ë²¿·ÖĞ´·¨£¬½è¼øÁËzlogµÄconfµÄ´¦ÀíÄ£Ê½ **/
+    /** æ­¤éƒ¨åˆ†å†™æ³•ï¼Œå€Ÿé‰´äº†zlogçš„confçš„å¤„ç†æ¨¡å¼ **/
 
-    /*** ¿´ÊÇ²»ÊÇ section ***/
+    /*** çœ‹æ˜¯ä¸æ˜¯ section ***/
     if( line[0] == '[') {
         sscanf( line, "[ %[^] \t]", name);
         if ( strcmp( name, "common") == 0){
@@ -202,10 +225,15 @@ static int line_parser(char *line, tcpini * tcpini){
         return 0;
     }
 
-    /* »ñÈ¡ÅäÖÃÏîitemµÄÃû³Æ */
+    /* è·å–é…ç½®é¡¹itemçš„åç§° */
     sscanf( line, " %[^=]", name);
-    strtrim(name);
-    /* »ñÈ¡ÅäÖÃÏîµÄÖµ²¢ÇÒÈ¥Ç°ºó¿Õ¸ñ */
+    isstr_trim(name);
+    if( strlen(name) > 32){
+        islog_error("ini item name length must less then 32");
+        return -5;
+    }
+
+    /* è·å–é…ç½®é¡¹çš„å€¼å¹¶ä¸”å»å‰åç©ºæ ¼ */
     pline = NULL;
     pline = strstr( line, "=");
     if( pline == NULL){
@@ -213,7 +241,7 @@ static int line_parser(char *line, tcpini * tcpini){
         return -5;
     }
     pline = pline + 1;
-    strtrim( pline);
+    isstr_trim( pline);
 
     switch(tcpini->section){
         case S_COMMON:
@@ -243,14 +271,14 @@ static int line_parser(char *line, tcpini * tcpini){
             break;
         case S_REQUEST:
             if( strcmp( name, "req_len_len") == 0){
-                /** ±¨ÎÄÍ· req_len_len **/
+                /** æŠ¥æ–‡å¤´ req_len_len **/
                 tcpini->req_len_len = atol(pline);
                 if(tcpini->req_len_len <= 0){
                     islog_error("item[%s] is incorrect: [%s]",name, line);
                     return -5;
                 }
             } else if( strcmp( name, "req_len_type") == 0){
-                /** ±¨ÎÄÍ·³¤¶ÈÀàĞÍ **/
+                /** æŠ¥æ–‡å¤´é•¿åº¦ç±»å‹ **/
                 if( strcmp( pline, "total") == 0){
                     tcpini->req_len_type = TCPINI_REQ_LENTYPE_TOTAL;
                 }else if( strcmp( pline, "body") == 0){
@@ -260,7 +288,7 @@ static int line_parser(char *line, tcpini * tcpini){
                     return -5;
                 }
             } else if( strcmp( name, "req_head") == 0) {
-               /* ÏÈÏú»Ù³õÊ¼»¯µÄreq_head */
+               /* å…ˆé”€æ¯åˆå§‹åŒ–çš„req_head */
                zfree(tcpini->req_head);
                 tcpini->req_head = zcalloc(strlen(pline) + 1);
                if(tcpini->req_head == NULL){
@@ -321,9 +349,9 @@ static int line_parser(char *line, tcpini * tcpini){
                 }
             } else if( strcmp( name, "rsp_code_location") == 0){
                 if( strcmp( pline, "head") == 0){
-                    tcpini->rsp_code_location = TCPINI_RCL_BODY;
-                }else if( strcmp( pline, "body") == 0){
                     tcpini->rsp_code_location = TCPINI_RCL_HEAD;
+                }else if( strcmp( pline, "body") == 0){
+                    tcpini->rsp_code_location = TCPINI_RCL_BODY;
                 }else{
                     islog_error("item[%s] is incorrect: [%s], legal value is head/body.",name, line);
                     return -5;
@@ -346,7 +374,29 @@ static int line_parser(char *line, tcpini * tcpini){
             }
             break;
         case S_PARAMETERS:
-            //TODO
+            strcpy( tcpini->paras[tcpini->paras_pos].key, name);
+            q = NULL;
+            q = strstr( pline, ",");
+            char para_type[20];
+            memset( para_type, 0x00, sizeof( para_type));
+            memcpy( para_type, pline, q - pline);
+            if( strcmp( para_type, "COUNTER") == 0){
+                tcpini->paras[tcpini->paras_pos].type = TCPINI_P_COUNTER;
+                tcpini->paras[tcpini->paras_pos].offset = zcalloc(1*sizeof(long));
+                pthread_mutex_init(&tcpini->paras[tcpini->paras_pos].mutex, NULL);
+            }else if( strcmp( para_type, "FILE") == 0){
+                tcpini->paras[tcpini->paras_pos].type = TCPINI_P_FILE;
+                pthread_mutex_init(&tcpini->paras[tcpini->paras_pos].mutex, NULL);
+            }else if( strcmp( para_type, "DATETIME") == 0){
+                tcpini->paras[tcpini->paras_pos].type = TCPINI_P_DATETIME;
+            }else if( strcmp( para_type, "CONNECTID") == 0){
+                tcpini->paras[tcpini->paras_pos].type = TCPINI_P_CONNECTID;
+            }else{
+                islog_error("parameter type is error [%s], not in COUNTER/FILE/DATATIME/CONNECTID ",para_type);
+            }
+            strcpy( tcpini->paras[tcpini->paras_pos].format, q+1);
+            isstr_trim(tcpini->paras[tcpini->paras_pos].format);
+            tcpini->paras_pos++;
             break;
         default:
             islog_error("section is not support");
@@ -356,40 +406,40 @@ static int line_parser(char *line, tcpini * tcpini){
 }
 
 /***********************************
- * ¶ş¡¢ÇëÇó±¨ÎÄÆ´×°²¿·Ö
+ * äºŒã€è¯·æ±‚æŠ¥æ–‡æ‹¼è£…éƒ¨åˆ†
  ***********************************/
-static int tcpini_para_eval(char * key, char * *value, tcpini * tcpini );
-static int tcpini_buf_eval(char ** p_buf, int * p_len, char *tmpl_buf, tcpini *tcpini);
+static int tcpini_para_eval(char * key, char * *value, tcpini * tcpini, void * data );
+static int tcpini_buf_eval(char ** p_buf, int * p_len, char *tmpl_buf, tcpini *tcpini, void * data);
 
-/** ½âÎöÅäÖÃĞÅÏ¢³ÉÎª·¢ËÍĞÅÏ¢ **/
-int tcpini_request_parser(tcpini *tcpini, char ** request, long *length ){
+/** è§£æé…ç½®ä¿¡æ¯æˆä¸ºå‘é€ä¿¡æ¯ **/
+int tcpini_request_parser(tcpini *tcpini, char ** request, long *length, void * data ){
     int true_headlen = 0;
     int true_bodylen = 0;
     char * true_head = NULL;
     char * true_body = NULL;
     char true_len[32];
 
-    /** ½âÎö±¨ÎÄÍ·²ÎÊı **/
-    if(tcpini_buf_eval( &true_head, &true_headlen, tcpini->req_head, tcpini) != 0){
+    /** è§£ææŠ¥æ–‡å¤´å‚æ•° **/
+    if(tcpini_buf_eval( &true_head, &true_headlen, tcpini->req_head, tcpini, data) != 0){
         islog_error("tcpini buf eval req_head error!![%s]", tcpini->req_head);
         goto error;
     }
 
-    /** ½âÎö±¨ÎÄÌå²ÎÊı **/
-    if(tcpini_buf_eval( &true_body, &true_bodylen, tcpini->req_body, tcpini) != 0){
+    /** è§£ææŠ¥æ–‡ä½“å‚æ•° **/
+    if(tcpini_buf_eval( &true_body, &true_bodylen, tcpini->req_body, tcpini, data) != 0){
         islog_error("tcpini buf eval req_body error!![%s]", tcpini->req_body);
         goto error;
     }
 
-    /** ¿ªÊ¼Æ´×°requestÒª·¢ËÍµÄ×Ü±¨ÎÄÄÚÈİ **/
+    /** å¼€å§‹æ‹¼è£…requestè¦å‘é€çš„æ€»æŠ¥æ–‡å†…å®¹ **/
     *request  = zcalloc( (true_headlen + true_bodylen) * sizeof(char));
     memcpy( *request, true_head, true_headlen);
     memcpy( *request+true_headlen, true_body, true_bodylen);
 
-    /** request×Ü³¤¶È **/
+    /** requestæ€»é•¿åº¦ **/
     *length =  true_headlen + true_bodylen;
 
-    /** Ìæ»»±¨ÎÄÖĞµÄ×Ü³¤¶È,·ÅÔÚÏÂÃæÊÇÎªÁËÖ§³ÖbodyÖĞ·ÅlengthµÄÇé¿ö **/
+    /** æ›¿æ¢æŠ¥æ–‡ä¸­çš„æ€»é•¿åº¦,æ”¾åœ¨ä¸‹é¢æ˜¯ä¸ºäº†æ”¯æŒbodyä¸­æ”¾lengthçš„æƒ…å†µ **/
     char * p = NULL;
     p = strstr(*request , "$$");
     if( p == NULL){
@@ -412,27 +462,104 @@ int tcpini_request_parser(tcpini *tcpini, char ** request, long *length ){
     return -5;
 }
 
-/* µ¥¸ö±äÁ¿µÄÇóÖµ */
-static int tcpini_para_eval(char * key, char * *value, tcpini * tcpini ){
+/* æ•´ä¸ªå­—ç¬¦ä¸²çš„å˜é‡æ±‚å€¼ */
+static int tcpini_buf_eval(char ** p_buf, int * p_len, char *tmpl_buf, tcpini *tcpini, void * data){
+    char * p = NULL;
+    char * q = NULL;
+    char * value = NULL;
+    char key[32];
+    int buf_len ;
+    char * buf;
+
+    *p_buf = NULL;
+    *p_len = 0;
+
+    buf_len = strlen(tmpl_buf);
+    /** è¾¹ç•Œæƒ…å†µï¼Œå¦‚æœæœªé…ç½®ï¼Œåˆ™ç›´æ¥è¿”å›  **/
+    if( buf_len == 0){
+        buf = NULL;
+        return 0;
+    }
+
+    /** ä¸ºbufç”³è¯·åˆå§‹é•¿åº¦ï¼Œåç»­è¿˜è¦relloc **/
+    buf = zcalloc(buf_len * sizeof(char));
+    if( buf == NULL){
+        islog_error(" calloc error [%s]", strerror(errno));
+        return -5;
+    }
+    q = tmpl_buf;
+    /** å¾ªç¯æŸ¥æ‰¾$()å‚æ•° **/
+    while(1){
+        /** æŸ¥æ‰¾å˜é‡ **/
+        p = NULL;
+        p = strstr(q, "$(");
+        if( p == NULL){
+            /** copyæœ€åçš„tmplateå°¾éƒ¨ **/
+            memcpy( buf+strlen(buf), q, strlen(q));
+            break;
+        }
+        /** copy å‚æ•°å‰ç¼€ **/
+        memcpy( buf+strlen(buf), q, p-q);
+
+        /** å¯»æ‰¾å‚æ•°ç»“æŸç¬¦ **/
+        q = strstr( p+2, ")");
+
+        /** å–åˆ°å˜é‡åç§° **/
+        memset( key, 0x00, sizeof( key));
+        /* $(length) */
+        memcpy( key, p+2, q - (p + 2) );
+
+        /** è·å–å˜é‡å®é™…å€¼ **/
+        if(tcpini_para_eval(key, &value, tcpini, data) != 0){
+            return -5;
+        }
+        islog_debug("para eval [%s]=[%s]",key, value);
+
+        /** è®¡ç®—å®é™…é•¿åº¦,æ ¹æ®æƒ…å†µéƒ½è¦åŠ¨æ€çš„è°ƒæ•´ **/
+        if( strlen(buf) + strlen(value) > buf_len){
+            buf_len += strlen(value) - strlen(key) - 3;
+            buf = zrealloc(buf, buf_len * sizeof(char));
+            if( buf == NULL){
+                return -5;
+            }
+        }
+        /** copyå‚æ•°å®é™…å†…å®¹ **/
+        memcpy( buf+strlen(buf), value, strlen(value));
+
+        q = q + 1;
+    }
+
+    *p_len = strlen(buf);
+    *p_buf = buf;
+
+    return 0;
+}
+
+static int tcpini_para_type_datetime( char * key, char **value, a_para * para, tcpini * tcpini, void * data);
+static int tcpini_para_type_connectid( char * key, char **value, a_para * para, tcpini * tcpini, void * data);
+static int tcpini_para_type_counter( char * key, char **value, a_para * para, tcpini * tcpini, void * data);
+static int tcpini_para_type_file( char * key, char **value, a_para * para, tcpini * tcpini, void * data);
+
+
+/* å•ä¸ªå˜é‡çš„æ±‚å€¼ */
+static int tcpini_para_eval(char * key, char * *value, tcpini * tcpini, void * data){
     int i = 0;
-    time_t rawtime = 0;
-    struct tm * timeinfo;
 
     a_para * para = NULL;
 
-    /** ±¨ÎÄ³¤¶ÈÓòÌØÊâ´¦Àí **/
+    /** æŠ¥æ–‡é•¿åº¦åŸŸç‰¹æ®Šå¤„ç† **/
     if( strcmp( key, "length") == 0){
         *value = zcalloc(tcpini->req_len_len * sizeof(char));
         if( value == NULL){
             islog_error("calloc memroy error, [%s]", strerror(errno));
             return -5;
         }
-        /*** Ç°Á½Î»ÊÇ$$£¬³¤¶ÈÖÁÉÙĞèÒª2Î»³¤ ***/
+        /*** å‰ä¸¤ä½æ˜¯$$ï¼Œé•¿åº¦è‡³å°‘éœ€è¦2ä½é•¿ ***/
         snprintf(*value, tcpini->req_len_len + 1, "$$%0*d", tcpini->req_len_len - 2, 0);
         return 0;
     }
 
-    /** Ä¿Ç°Ê¹ÓÃ±éÀú£¬ºóĞø¿ÉÒÔ×ö·Ç¶¯Ì¬À©Õ¹µÄhashmap,Ê¹ÓÃ¿ª·ÅÑ°Ö··¨TODO **/
+    /** ç›®å‰ä½¿ç”¨éå†ï¼Œåç»­å¯ä»¥åšéåŠ¨æ€æ‰©å±•çš„hashmap,ä½¿ç”¨å¼€æ”¾å¯»å€æ³•TODO **/
     for( i = 0; i < TCPINI_MAX_PARANUM ; i++){
         if(strcmp(tcpini->paras[i].key, key) == 0){
             para = &tcpini->paras[i];
@@ -445,115 +572,169 @@ static int tcpini_para_eval(char * key, char * *value, tcpini * tcpini ){
         return -5;
     }
 
+    int ret = 0;
     switch(para->type){
         case TCPINI_P_COUNTER:
-            //TODO
-            //¿ÉÄÜĞèÒªÈ«¾Ö¾²Ì¬±äÁ¿£¬¼ÓËø´¦Àí
+            ret = tcpini_para_type_counter( key, value, para, tcpini, data);
             break;
         case TCPINI_P_FILE:
-            //TODO
+            ret = tcpini_para_type_file( key, value, para, tcpini, data);
             break;
         case TCPINI_P_CONNECTID:
-            *value =  zcalloc( 8 * sizeof(char));
-            if( *value == NULL){
-                islog_error("calloc memroy error, [%s]", strerror(errno));
-                return -5;
-            }
-//            sprintf( *value, "%08ld", thread);
+            ret = tcpini_para_type_connectid( key, value, para, tcpini, data);
             break;
         case TCPINI_P_DATETIME:
-            time(&rawtime);
-            timeinfo = localtime(&rawtime);
-            *value = zcalloc( strlen(para->format) + 2);
-            if( *value == NULL){
-                islog_error("calloc memroy error, [%s]", strerror(errno));
-                return -5;
-            }
-            strftime( *value, strlen(para->format+2), para->format, timeinfo);
+            ret = tcpini_para_type_datetime( key, value, para, tcpini, data);
             break;
     }
-
-    return 0;
-}
-
-/* Õû¸ö×Ö·û´®µÄ±äÁ¿ÇóÖµ */
-static int tcpini_buf_eval(char ** p_buf, int * p_len, char *tmpl_buf, tcpini *tcpini){
-    char * p = NULL;
-    char * q = NULL;
-    char * value = NULL;
-    char key[32];
-    int buf_len ;
-    char * buf;
-
-    *p_buf = NULL;
-    *p_len = 0;
-
-    buf_len = strlen(tmpl_buf);
-    /** ±ß½çÇé¿ö£¬Èç¹ûÎ´ÅäÖÃ£¬ÔòÖ±½Ó·µ»Ø  **/
-    if( buf_len == 0){
-        buf = NULL;
-        return 0;
-    }
-
-    /** ÎªbufÉêÇë³õÊ¼³¤¶È£¬ºóĞø»¹Òªrelloc **/
-    buf = zcalloc(buf_len * sizeof(char));
-    if( buf == NULL){
-        islog_error(" calloc error [%s]", strerror(errno));
+    if( ret != 0){
+        islog_error("para_type_deal error");
         return -5;
     }
-    q = tmpl_buf;
-    /** Ñ­»·²éÕÒ$()²ÎÊı **/
-    while(1){
-        /** ²éÕÒ±äÁ¿ **/
-        p = NULL;
-        p = strstr(q, "$(");
-        if( p == NULL){
-            /** copy×îºóµÄtmplateÎ²²¿ **/
-            memcpy( buf+strlen(buf), q, strlen(q));
-            break;
-        }
-        /** copy ²ÎÊıÇ°×º **/
-        memcpy( buf+strlen(buf), q, p-q);
-
-        /** Ñ°ÕÒ²ÎÊı½áÊø·û **/
-        q = strstr( p+2, ")");
-
-        /** È¡µ½±äÁ¿Ãû³Æ **/
-        memset( key, 0x00, sizeof( key));
-        /* $(length) */
-        memcpy( key, p+2, q - (p + 2) );
-
-        /** »ñÈ¡±äÁ¿Êµ¼ÊÖµ **/
-        if(tcpini_para_eval(key, &value, tcpini) != 0){
-            return -5;
-        }
-
-        /** ¼ÆËãÊµ¼Ê³¤¶È,¸ù¾İÇé¿ö¶¼Òª¶¯Ì¬µÄµ÷Õû **/
-        if( strlen(buf) + strlen(value) > buf_len){
-            buf_len += strlen(value) - strlen(key) - 3;
-            buf = zrealloc(buf, buf_len * sizeof(char));
-            if( buf == NULL){
-                return -5;
-            }
-        }
-        /** copy²ÎÊıÊµ¼ÊÄÚÈİ **/
-        memcpy( buf+strlen(buf), value, strlen(value));
-
-        q = q + 1;
-    }
-
-    *p_len = strlen(buf);
-    *p_buf = buf;
 
     return 0;
 }
+
+/*  datetimeç±»å‹çš„å€¼è·å– */
+static int tcpini_para_type_datetime( char * key, char **value, a_para * para, tcpini * tcpini, void * data){
+    islog_debug("para type is datetime --[%s]", key);
+    *value = zcalloc( strlen(para->format) * 2 + 100);
+    if( *value == NULL){
+        islog_error("calloc memroy error, [%s]", strerror(errno));
+        return -5;
+    }
+    istime_strftime( *value, strlen(para->format) * 2 + 100, para->format, istime_us());
+    islog_debug("para type is datetime --[%s]", *value);
+    return 0;
+}
+/*  connectidç±»å‹çš„å€¼è·å– */
+static int tcpini_para_type_connectid( char * key, char **value, a_para * para, tcpini * tcpini, void * data){
+    islog_debug("para type is connectid --[%s],[%x]", key, data);
+    connection *c= data;
+    char * format = para->format;
+
+    /* å…ˆç®—é•¿åº¦, snprintfçš„ç‰¹æ®Šç”¨æ³• */
+    int n = 0;
+    n = snprintf(NULL, 0, format, c->cno) + 1;
+
+    *value =  zcalloc( n * sizeof(char));
+    if( *value == NULL){
+        islog_error("calloc memroy error, [%s]", strerror(errno));
+        return -5;
+    }
+    snprintf( *value, n, format, c->cno);
+    islog_debug("para type is connectid --[%s]", *value);
+    return 0;
+}
+/* counterç±»å‹çš„è·å– */
+static int tcpini_para_type_counter( char * key, char **value, a_para * para, tcpini * tcpini, void * data){
+    islog_debug("para type is counter --[%s]", key);
+    //connection *c= data;
+    long l_start = 0;
+    long l_end = 0;
+    char element[20];
+    char fmt[20];
+    long l_step = 0;
+    long *cur = NULL;
+    long cur_value = 0;
+
+    isstr_split( para->format, ",", 1, element);
+    isstr_trim(element);
+    l_start = atol( element);
+    isstr_split( para->format, ",", 2, element);
+    isstr_trim(element);
+    l_end = atol( element);
+    isstr_split( para->format, ",", 3, element);
+    isstr_trim(element);
+    l_step = atol( element);
+    isstr_split( para->format, ",", 4, element);
+    isstr_trim(element);
+    strcpy( fmt, element);
+
+    /** æ­¤å¤„å¤šçº¿ç¨‹åœºæ™¯ï¼Œéœ€è¦è¿›è¡ŒåŸå­æ“ä½œ **/
+    cur = para->offset;
+    /* åŠ é” */
+    pthread_mutex_lock(&para->mutex);
+    *cur = *cur + l_step;
+
+    if( *cur > l_end ){
+        *cur = *cur - l_end + l_start;
+    }
+    if( *cur < l_start){
+        *cur = l_start;
+    }
+    cur_value = *cur;
+    /* å»é” */
+    pthread_mutex_unlock(&para->mutex);
+
+    /* å…ˆç®—é•¿åº¦, snprintfçš„ç‰¹æ®Šç”¨æ³• */
+    int n = 0;
+    n = snprintf(NULL, 0, fmt, cur_value) + 1;
+    *value =  zcalloc( n * sizeof(char));
+    if( *value == NULL){
+        islog_error("calloc memroy error, [%s]", strerror(errno));
+        return -5;
+    }
+    snprintf( *value, n, fmt, cur_value);
+
+    islog_debug("para type is counter --[%s]", *value);
+    return 0;
+}
+static int tcpini_para_type_file( char * key, char **value, a_para * para, tcpini * tcpini, void * data){
+    islog_debug("para type is file --[%s]", key);
+//    connection *c= data;
+    FILE * fp = NULL;
+    char * filename = para->format;
+
+    if( para->offset == NULL){
+        /** ç¬¬ä¸€æ¬¡æ‰“å¼€æ–‡ä»¶ **/
+        pthread_mutex_lock(&para->mutex);
+        if( para->offset == NULL){
+            fp = fopen( filename, "r");
+            if( fp == NULL){
+                islog_error(" open para file[%s] error, [%s]", filename, strerror(errno));
+                return -5;
+            }
+            para->offset = fp;
+        }
+        pthread_mutex_unlock(&para->mutex);
+    }
+    fp =  para->offset;
+
+    if( *value == NULL){
+        *value =  zcalloc( 1024 * sizeof(char));
+        if( *value == NULL){
+            islog_error("calloc memroy error, [%s]", strerror(errno));
+            return -5;
+        }
+    }
+
+    if( fgets( *value, 1024, fp) == NULL){
+        islog_debug("fgets error, [%s]", strerror(errno));
+        fseek( fp, 0, SEEK_SET);
+        /** å¯èƒ½æ˜¯è¯»åˆ°è¡Œå°¾äº†ï¼Œé‡æ–°æ‰“å¼€ç»§ç»­è¯» **
+        fclose(fp);
+        fp = NULL;
+        para->offset = NULL;
+        */
+    }
+    islog_debug("branch.txt--[%s]", *value);
+    if( (*value)[strlen(*value) - 1] == '\n'){
+        (*value)[strlen(*value) - 1] = '\0';
+    }
+
+    islog_debug("para type is file --[%s]", *value);
+    return 0;
+}
+
+
 /***********************************
- * Èı¡¢Ó¦´ğ±¨ÎÄ½âÎö²¿·Ö
+ * ä¸‰ã€åº”ç­”æŠ¥æ–‡è§£æéƒ¨åˆ†
  ***********************************/
 static int response_head(void * data, char * buf, size_t n);
 static int response_body(void * data, char * buf, size_t n);
 
-/** Ó¦´ğ²¿·Ö´¦Àí-³õÊ¼»¯ **/
+/** åº”ç­”éƒ¨åˆ†å¤„ç†-åˆå§‹åŒ– **/
 int tcpini_response_init(void * data){
     connection *c = data;
     c->readlen = 0;
@@ -564,7 +745,7 @@ int tcpini_response_init(void * data){
 
     return 0;
 }
-/** Ó¦´ğ²¿·Ö´¦Àí-²ğ°ü **/
+/** åº”ç­”éƒ¨åˆ†å¤„ç†-æ‹†åŒ… **/
 int tcpini_response_parser(void * data, char * buf, size_t n){
     connection *c = data;
 
@@ -583,7 +764,7 @@ int tcpini_response_parser(void * data, char * buf, size_t n){
     return -5;
 
 }
-/** ½âÎöÏìÓ¦ÂëÊÇ·ñÎª³É¹¦ **/
+/** è§£æå“åº”ç æ˜¯å¦ä¸ºæˆåŠŸ **/
 int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
     int success = 0;
     char * rsp_code_pos = body;
@@ -596,7 +777,7 @@ int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
     char rsp_code[32];
     memset( rsp_code, 0x00, sizeof( rsp_code));
 
-    /** ÏìÓ¦ÂëµÄ²¿·Ö **/
+    /** å“åº”ç çš„éƒ¨åˆ† **/
     if(tcpini->rsp_code_location == TCPINI_RCL_HEAD){
         rsp_code_pos = head;
     }
@@ -605,7 +786,7 @@ int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
     }
 
     switch(tcpini->rsp_code_type){
-        /* ¹Ì¶¨¸ñÊ½ */
+        /* å›ºå®šæ ¼å¼ */
         case TCPINI_PKG_FIXED:
             sscanf(tcpini->rsp_code_localtion_tag, "%d%d", &code_beg, &code_len);
             memcpy( rsp_code, rsp_code_pos+code_beg-1, code_len);
@@ -617,13 +798,23 @@ int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
              *       0123456789
              * */
             p = strstr(rsp_code_pos, tcpini->rsp_code_localtion_tag);
+            if( p == NULL){
+                islog_debug("rsp msg [%s] can't find [%s]", rsp_code_pos, tcpini->rsp_code_localtion_tag);
+                strcpy( rsp_code, "");
+                break;
+            }
             q = strstr( p + strlen(tcpini->rsp_code_localtion_tag), "</");
-            memcpy(rsp_code, p + strlen(tcpini->rsp_code_localtion_tag), q - p - 1);
+            if( q == NULL){
+                islog_debug("rsp msg [%s] can't find [%s]", rsp_code_pos, tcpini->rsp_code_localtion_tag);
+                strcpy( rsp_code, "");
+                break;
+            }
+            memcpy(rsp_code, p + strlen(tcpini->rsp_code_localtion_tag), q - (p+strlen(tcpini->rsp_code_localtion_tag)));
 
             break;
         case TCPINI_PKG_JSON:
             /* eg:
-             * {¡°status¡±: ¡°0000¡±, ¡°message¡±: ¡°success¡±}
+             * {â€œstatusâ€: â€œ0000â€, â€œmessageâ€: â€œsuccessâ€}
              * */
             p = strstr(rsp_code_pos, tcpini->rsp_code_localtion_tag);
             q = strstr( p + strlen(tcpini->rsp_code_localtion_tag), "\"");
@@ -637,6 +828,8 @@ int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
 
     if(strcmp(rsp_code, tcpini->rsp_code_success) == 0){
         success = 1;
+    }else{
+        islog_debug("rsp_code[%s] != [%s] ", rsp_code, tcpini->rsp_code_success);
     }
 
     return success;
@@ -654,11 +847,11 @@ static int response_head(void * data, char * buf, size_t n) {
 
     if( c->readlen < c->tcpini->rsp_headlen){
         islog_debug(" readlen is less than rsp_headlen,  continue read");
-        /** Ã»¶ÁÍê±¨ÎÄÍ·£¬ÔòÒ»Ö±´¦Àí **/
+        /** æ²¡è¯»å®ŒæŠ¥æ–‡å¤´ï¼Œåˆ™ä¸€ç›´å¤„ç† **/
         memcpy( c->rsp_head + strlen(c->rsp_head), buf, n);
     }
     else{
-        /** ±¨ÎÄÍ·ÒÑ¾­¶Á¹»³¤¶È£¬¿ªÊ¼½âÎö **/
+        /** æŠ¥æ–‡å¤´å·²ç»è¯»å¤Ÿé•¿åº¦ï¼Œå¼€å§‹è§£æ **/
         head_left_len = c->tcpini->rsp_headlen - strlen(c->rsp_head);
 
         memcpy( c->rsp_head + strlen(c->rsp_head), buf, head_left_len);
@@ -667,7 +860,7 @@ static int response_head(void * data, char * buf, size_t n) {
         memcpy(tmp_len, c->rsp_head + c->tcpini->rsp_len_beg - 1, c->tcpini->rsp_len_len);
         c->rsp_len = atol( tmp_len);
 
-        /** °´³¤¶ÈÉêÇë±¨ÎÄÌåµÄ³¤¶È£¬ÕâÀïÃ»ÓĞ×öÅĞ¶Ï£¬Èç¹ûÊÇlentypeÊÇtotoal£¬Ôò¶àÉêÇëÁË±¨ÎÄÍ·µÄ³¤¶È **/
+        /** æŒ‰é•¿åº¦ç”³è¯·æŠ¥æ–‡ä½“çš„é•¿åº¦ï¼Œè¿™é‡Œæ²¡æœ‰åšåˆ¤æ–­ï¼Œå¦‚æœæ˜¯lentypeæ˜¯totoalï¼Œåˆ™å¤šç”³è¯·äº†æŠ¥æ–‡å¤´çš„é•¿åº¦ **/
         c->rsp_body = zcalloc( c->rsp_len * sizeof(char) + 1 );
         if( c->rsp_body == NULL){
             fprintf(stderr, "rsp_body calloc error [%s]", strerror(errno));
@@ -692,10 +885,10 @@ static int response_body(void * data, char * buf, size_t n) {
     }
 
     islog_debug("readlen[%d], rsplen[%d],rsp_headlen[%d]", c->readlen, c->rsp_len, c->tcpini->rsp_headlen);
-    /** ±¨ÎÄ³¤¶ÈÎªtotalÄ£Ê½ **/
+    /** æŠ¥æ–‡é•¿åº¦ä¸ºtotalæ¨¡å¼ **/
     if(c->tcpini->rsp_len_type == TCPINI_RSP_LENTYPE_TOTAL)
     {
-        /* ¶ÁµÄ³¤¶È²»¹»¶¨ÒåµÄ³¤¶È */
+        /* è¯»çš„é•¿åº¦ä¸å¤Ÿå®šä¹‰çš„é•¿åº¦ */
         if( c->readlen < c->rsp_len) {
             ;
         }else if( c->readlen == c->rsp_len){
@@ -707,9 +900,9 @@ static int response_body(void * data, char * buf, size_t n) {
         }
     }
 
-    /** ±¨ÎÄÍ·³¤¶ÈÎªbodyÄ£Ê½ **/
+    /** æŠ¥æ–‡å¤´é•¿åº¦ä¸ºbodyæ¨¡å¼ **/
     if(c->tcpini->rsp_len_type == TCPINI_RSP_LENTYPE_BODY) {
-        /* ¶ÁµÄ³¤¶È²»¹»¶¨ÒåµÄ³¤¶È */
+        /* è¯»çš„é•¿åº¦ä¸å¤Ÿå®šä¹‰çš„é•¿åº¦ */
         if (c->readlen < c->rsp_len + c->tcpini->rsp_headlen){
             ;
         }else if( c->readlen == c->rsp_len + c->tcpini->rsp_headlen){
@@ -722,35 +915,6 @@ static int response_body(void * data, char * buf, size_t n) {
     }
 
     return 0;
-}
-
-
-
-/** È¥³ı×Ö·û´®µÄÇ°ºó¿Õ¸ñ **/
-static char *strtrim(char *str)
-{
-    int i;
-    int b1, e1;
-
-    if (strlen(str) == 0) return str;
-
-    if (str)
-    {
-        for(i = 0; str[i] == ' '; i++);
-
-        b1 = i;
-
-        for(i = strlen(str) - 1; i >= b1 && str[i] == ' '; i--);
-
-        e1 = i;
-
-        if (e1 >= b1)
-            memmove(str, str+b1, e1-b1+1);
-
-        str[e1-b1+1] = 0;
-        return str;
-    }
-    else return str;
 }
 
 

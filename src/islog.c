@@ -11,12 +11,16 @@
 #include <time.h>
 #include <pthread.h>
 
-/* ×î´óÊä³öÐÐÊý */
+/* æœ€å¤§è¾“å‡ºè¡Œæ•° */
 #define ISLOG_LINE_MAXSIZE 1024
 /* log line maxsize */
 
+char * islog_version(){
+    return ISLOG_VERSION_NO;
+}
+
 #if 0
-/* REDISµÄserverlog, TODO´ýÐÞ¸Ä */
+/* REDISçš„serverlog, TODOå¾…ä¿®æ”¹ */
 void serverLogRaw(int level, const char *msg) {
     const int syslogLevelMap[] = { LOG_DEBUG, LOG_INFO, LOG_NOTICE, LOG_WARNING };
     const char *c = ".-*#";
@@ -73,7 +77,7 @@ void islog_print(char *file, long line, char *level, char *fmtstr, ...)
     va_end(ap);
 
     fprintf(stdout, "[%s][%s][%03ld]", level, file, line);
-    fprintf(stdout, "[%s]\n", tmpstr);
+    fprintf(stdout, "%s\n", tmpstr);
 
     return ;
 }

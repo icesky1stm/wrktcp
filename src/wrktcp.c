@@ -3,10 +3,10 @@
 #include "main.h"
 #include "wrktcp.h"
 
-/** wrkµÄÕûÌå»ã×ÜÊı¾İ **/
+/** wrkçš„æ•´ä½“æ±‡æ€»æ•°æ® **/
 config cfg;
 
-/** wrkÕâÃ´Ğ´¿´ÆğÀ´Ïñ¶ÔÏóµÄÊôĞÔ£¬ºÁÎŞÒâÒå **/
+/** wrkè¿™ä¹ˆå†™çœ‹èµ·æ¥åƒå¯¹è±¡çš„å±æ€§ï¼Œæ¯«æ— æ„ä¹‰ **/
 static struct sock sock = {
         .connect  = sock_connect,
         .close    = sock_close,
@@ -15,13 +15,13 @@ static struct sock sock = {
         .readable = sock_readable
 };
 
-/**  ctrl +c ´ò¶ÏĞÅºÅ **/
+/**  ctrl +c æ‰“æ–­ä¿¡å· **/
 static volatile sig_atomic_t stop = 0;
 static void handler(int sig) {
     stop = 1;
 }
 
-/** Ê¹ÓÃËµÃ÷ **/
+/** ä½¿ç”¨è¯´æ˜ **/
 static void usage() {
     printf("Usage: wrktcp <options> filename                      \n"
            "  Necessary Options:                                  \n"
@@ -45,50 +45,50 @@ static void usage() {
 }
 
 /*********************************************************
- * wrktcp Ö÷³ÌĞò
+ * wrktcp ä¸»ç¨‹åº
  * @param argc
  * @param argv
  * @return
  *********************************************************/
 int main(int argc, char **argv) {
-    /** ÉèÖÃĞÅºÅºöÂÔ **/
+    /** è®¾ç½®ä¿¡å·å¿½ç•¥ **/
     signal(SIGPIPE, SIG_IGN);
     signal(SIGINT,  SIG_IGN);
 
-    /** ½âÎöÈë¿Ú²ÎÊı **/
+    /** è§£æå…¥å£å‚æ•° **/
     if (parse_args(&cfg, argc, argv)) {
         islog_error("argv is errror!!!");
         usage();
         exit(1);
     }
 
-    /** ÉèÖÃÍ³¼ÆĞÅÏ¢³õÊ¼Öµ **/
+    /** è®¾ç½®ç»Ÿè®¡ä¿¡æ¯åˆå§‹å€¼ **/
     cfg.statistics.latency  = stats_alloc(cfg.timeout * 1000);
     cfg.statistics.requests = stats_alloc(MAX_THREAD_RATE_S);
     cfg.p_threads = zcalloc(cfg.threads * sizeof(thread));
 
-    /** ½âÎötcpinifileÎÄ¼ş **/
+    /** è§£ætcpinifileæ–‡ä»¶ **/
     if(tcpini_file_load(cfg.tcpini.file, &cfg.tcpini) != 0){
         fprintf(stderr, "unable to load tcpinifile %s\n",cfg.tcpini.file);
         exit(1);
     }
 
-    /** ¿ªÊ¼´´½¨Ïß³Ì **/
+    /** å¼€å§‹åˆ›å»ºçº¿ç¨‹ **/
     for (uint64_t i = 0; i < cfg.threads; i++) {
         thread *t      = &cfg.p_threads[i];
         t->tno = i + 1;
         t->loop        = aeCreateEventLoop(10 + cfg.connections * 3);
         t->connections = cfg.connections / cfg.threads;
-
+        t->lcfg = &cfg;
         t->tcpini = &cfg.tcpini;
         if (i == 0) {
-            /* ¹ÜµÀ·¢ËÍ,Ä¿Ç°Ò»´ÎÁ¬½ÓÒ»´ÎÍ¨Ñ¶ */
+            /* ç®¡é“å‘é€,ç›®å‰ä¸€æ¬¡è¿æ¥ä¸€æ¬¡é€šè®¯ */
             cfg.pipeline = 1;
-            /* ¶¯Ì¬Ä£°å */
-            if(cfg.tcpini.paras->value != NULL){
+            /* åŠ¨æ€æ¨¡æ¿ */
+            if(cfg.tcpini.paras_pos != 0){
                 cfg.isdynamic = 1;
             }
-            /* ÑÓ³Ù·¢ËÍ£¬Ôİ²»Ö§³Ö */
+            /* å»¶è¿Ÿå‘é€ï¼Œæš‚ä¸æ”¯æŒ */
             cfg.isdelay = 0;
         }
 
@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    /** ÉèÖÃctrl+c´ò¶ÏĞÅºÅ **/
+    /** è®¾ç½®ctrl+cæ‰“æ–­ä¿¡å· **/
     struct sigaction sa = {
         .sa_handler = handler,
         .sa_flags   = 0,
@@ -107,27 +107,27 @@ int main(int argc, char **argv) {
     sigfillset(&sa.sa_mask);
     sigaction(SIGINT, &sa, NULL);
 
-    /** ´òÓ¡Êä³öÍ· **/
+    /** æ‰“å°è¾“å‡ºå¤´ **/
     printf("Running %s loadtest ", format_time_s(cfg.duration));
     printf("@ %s:%d ", cfg.tcpini.host, cfg.tcpini.port);
     printf("using %s", cfg.tcpini.file);
     printf("\n");
     printf("  %"PRIu64" threads and %"PRIu64" connections\n", cfg.threads, cfg.connections);
 
-    /** ³õÊ¼»¯»ù±¾ĞÅÏ¢ **/
+    /** åˆå§‹åŒ–åŸºæœ¬ä¿¡æ¯ **/
     cfg.result.tm_start   = istime_us();
     cfg.result.complete = 0;
     cfg.result.bytes = 0;
     memset( &cfg.result.errors, 0x00, sizeof(errors));
 
-    /** Ö÷½ø³ÌµÈ´ıºó²¢ÉèÖÃÍ£Ö¹±êÖ¾ **/
+    /** ä¸»è¿›ç¨‹ç­‰å¾…åå¹¶è®¾ç½®åœæ­¢æ ‡å¿— **/
     running_sleep( &cfg);
     stop = 1;
 
-    /** ¿ªÊ¼¼ÇÂ¼Í³¼Æ½á¹ûĞÅÏ¢ **/
+    /** å¼€å§‹è®°å½•ç»Ÿè®¡ç»“æœä¿¡æ¯ **/
     for (uint64_t j = 0; j < cfg.threads; j++) {
         thread *t = &cfg.p_threads[j];
-        /* °¤¸öÏß³ÌµÈ´ı */
+        /* æŒ¨ä¸ªçº¿ç¨‹ç­‰å¾… */
         pthread_join(t->thread, NULL);
 
         cfg.result.complete += t->complete;
@@ -148,18 +148,18 @@ int main(int argc, char **argv) {
     cfg.result.req_fail_per_s = cfg.result.errors.status / cfg.result.runtime_s;
     cfg.result.bytes_per_s = cfg.result.bytes      / cfg.result.runtime_s;
 
-    /** Coordinated Omission ×´Ì¬ĞŞÕı, ÎÒÈÏÎªÊÇÏ¹ĞŞÕıÓ¦¸ÃÊ¹ÓÃwrk2µÄ·½·¨£¬µ«ÊÇÎªÁË±£³ÖºÍwrkµÄ½á¹ûÒ»ÖÂÔİÊ±±£Áô **/
+    /** Coordinated Omission çŠ¶æ€ä¿®æ­£, æˆ‘è®¤ä¸ºæ˜¯çä¿®æ­£åº”è¯¥ä½¿ç”¨wrk2çš„æ–¹æ³•ï¼Œä½†æ˜¯ä¸ºäº†ä¿æŒå’Œwrkçš„ç»“æœä¸€è‡´æš‚æ—¶ä¿ç•™ **/
     if (cfg.result.complete / cfg.connections > 0) {
-        /* ¼ÆËãÒ»´ÎÁ¬½ÓÆ½¾ùÑÓÊ±¶àÉÙ */
+        /* è®¡ç®—ä¸€æ¬¡è¿æ¥å¹³å‡å»¶æ—¶å¤šå°‘ */
         int64_t interval = cfg.result.runtime_us / (cfg.result.complete / cfg.connections);
-        /* ½øĞĞĞŞÕı£¬Ó¦¸ÃÑ§Ï°wrk2£¬Ôö¼Ó-R²ÎÊı */
+        /* è¿›è¡Œä¿®æ­£ï¼Œåº”è¯¥å­¦ä¹ wrk2ï¼Œå¢åŠ -Rå‚æ•° */
         stats_correct(cfg.statistics.latency, interval);
     }
 
-    /** Êä³öµ½ÆÁÄ»ÉÏ **/
+    /** è¾“å‡ºåˆ°å±å¹•ä¸Š **/
     output_console(&cfg);
 
-    /** Êä³öµ½htmlÎÄ¼şÖĞ **/
+    /** è¾“å‡ºåˆ°htmlæ–‡ä»¶ä¸­ **/
     if( cfg.ishtml ){
         output_html(&cfg);
     }
@@ -167,15 +167,15 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-/** ¶àÏß³ÌµÄÖ÷³ÌĞò£¬Ê¹ÓÃepoll´´½¨ºÍ¹ÜÀí¶à¸öÁ¬½Ó **/
+/** å¤šçº¿ç¨‹çš„ä¸»ç¨‹åºï¼Œä½¿ç”¨epollåˆ›å»ºå’Œç®¡ç†å¤šä¸ªè¿æ¥ **/
 void *thread_main(void *arg) {
     thread *thread = arg;
 
-    /** Èç¹û²»ÊÇ¶¯Ì¬Ä£°å£¬ÔòÖ»³õÊ¼»¯Ò»´Î·¢ËÍĞÅÏ¢,Ìá¸ßĞ§ÂÊ **/
+    /** å¦‚æœä¸æ˜¯åŠ¨æ€æ¨¡æ¿ï¼Œåˆ™åªåˆå§‹åŒ–ä¸€æ¬¡å‘é€ä¿¡æ¯,æé«˜æ•ˆç‡ **/
     char *request = NULL;
     long length = 0;
-    if ( !cfg.isdynamic ) {
-        if(tcpini_request_parser(thread->tcpini, &request, &length) != 0){
+    if ( !thread->lcfg->isdynamic ) {
+        if(tcpini_request_parser(thread->tcpini, &request, &length, NULL) != 0){
             fprintf(stderr, "parser ini content error !!!");
             return NULL;
         }
@@ -189,9 +189,10 @@ void *thread_main(void *arg) {
         c->cno = thread->tno * 10000 + i + 1;
         c->request = request;
         c->length  = length;
-        c->delayed = cfg.isdelay;
+        c->delayed = thread->lcfg->isdelay;
         c->tcpini = thread->tcpini;
-        islog_debug("CREATE c->no:ld", c->cno);
+        c->lcfg = thread->lcfg;
+        islog_debug("CREATE c->no:%ld", c->cno);
         connect_socket(thread, c);
     }
 
@@ -261,11 +262,11 @@ static int record_rate(aeEventLoop *loop, long long id, void *data) {
     thread *thread = data;
 
     if (thread->requests > 0) {
-        /** ´Ë´¦ĞŞ¸ÄÁËÍ³¼Æ·½Ê½£¬wrkµÄ·½Ê½ÊÇ°´TPSÎªÕûÊıÍ³¼Æ£¬×î´óÊÇ1000Wtps£¬
-         * ÕâÑù»á²úÉúÁ½¸öÎÊÌâ£º
-         * 1.10000000 * uint64 = 80MµÄÄÚ´æÕ¼ÓÃ
-         * 2.Èç¹ûTPS½ÏµÍ£¬±ÈÈçÏìÓ¦Ê±¼äÔÚ100msÒÔÉÏµÄÏµÍ³£¬»ù±¾ÉÏTPSÍ³¼Æ·Ç³£µÄ²»×¼È·,ÒòÎªË¢ĞÂ¼ä¸ôÊÇ100MS£¬µ¼ÖÂ´óÁ¿TPS·Ö²¼¶¼ÊÇ0
-         * ÕâÀïTPS¾«¶È´Ó1->0.1,ÎªÁË²»Ôö¼ÓÄÚ´æÏûºÄ£¬ÒÀ¾ÉÊ¹ÓÃ1000W¸ö·Ö²¼£¬ÕâÑùÏàµ±ÓÚËõ¼õÁË×î´óTPSµÄÖ§³Öµ½100W TPS
+        /** æ­¤å¤„ä¿®æ”¹äº†ç»Ÿè®¡æ–¹å¼ï¼Œwrkçš„æ–¹å¼æ˜¯æŒ‰TPSä¸ºæ•´æ•°ç»Ÿè®¡ï¼Œæœ€å¤§æ˜¯1000Wtpsï¼Œ
+         * è¿™æ ·ä¼šäº§ç”Ÿä¸¤ä¸ªé—®é¢˜ï¼š
+         * 1.10000000 * uint64 = 80Mçš„å†…å­˜å ç”¨
+         * 2.å¦‚æœTPSè¾ƒä½ï¼Œæ¯”å¦‚å“åº”æ—¶é—´åœ¨100msä»¥ä¸Šçš„ç³»ç»Ÿï¼ŒåŸºæœ¬ä¸ŠTPSç»Ÿè®¡éå¸¸çš„ä¸å‡†ç¡®,å› ä¸ºåˆ·æ–°é—´éš”æ˜¯100MSï¼Œå¯¼è‡´å¤§é‡TPSåˆ†å¸ƒéƒ½æ˜¯0
+         * è¿™é‡ŒTPSç²¾åº¦ä»1->0.1,ä¸ºäº†ä¸å¢åŠ å†…å­˜æ¶ˆè€—ï¼Œä¾æ—§ä½¿ç”¨1000Wä¸ªåˆ†å¸ƒï¼Œè¿™æ ·ç›¸å½“äºç¼©å‡äº†æœ€å¤§TPSçš„æ”¯æŒåˆ°100W TPS
          * **/
         uint64_t elapsed_ms = (istime_us() - thread->start) / 1000;
         uint64_t requests = (thread->requests * 10 / (double) elapsed_ms) * 1000;
@@ -292,13 +293,13 @@ static void socket_connected(aeEventLoop *loop, int fd, void *data, int mask) {
     connection *c = data;
     islog_debug("ALREADY CONNECTED cno:%ld", c->cno);
 
-    switch (sock.connect(c, cfg.tcpini.host)) {
+    switch (sock.connect(c, c->tcpini->host)) {
         case OK:    break;
         case ERROR: goto error;
         case RETRY: return;
     }
 
-    /** ³õÊ¼»¯½ÓÊÕµÄĞÅÏ¢ **/
+    /** åˆå§‹åŒ–æ¥æ”¶çš„ä¿¡æ¯ **/
     if(tcpini_response_init(c) != 0){
         islog_error(" response init error");
         goto error;
@@ -328,17 +329,18 @@ static void socket_writeable(aeEventLoop *loop, int fd, void *data, int mask) {
         return;
     }
 
-    /** µÈÓÚ0µÄÊ±ºò£¬¾ÍÊÇÒª·¢ËÍµÄÊ±ºò **/
+    /** ç­‰äº0çš„æ—¶å€™ï¼Œå°±æ˜¯è¦å‘é€çš„æ—¶å€™ **/
     if (!c->written) {
-        /*** Èç¹ûÊÇ¶¯Ì¬Ä£°å,ÔòÃ¿´ÎĞ´µÄÊ±ºò¶¼³õÊ¼»¯,Ğ§ÂÊ²»¸ß ***/
-        if (cfg.isdynamic) {
-            if(tcpini_request_parser( &cfg.tcpini, &c->request, &c->length) != 0){
-                fprintf(stderr, "writer parser ini content error !!!");
-                goto error;
+        /*** å¦‚æœæ˜¯åŠ¨æ€æ¨¡æ¿,åˆ™æ¯æ¬¡å†™çš„æ—¶å€™éƒ½åˆå§‹åŒ–,æ•ˆç‡ä¸é«˜ ***/
+        if (c->lcfg->isdynamic) {
+            if(tcpini_request_parser( c->tcpini, &c->request, &c->length, c) != 0){
+                fprintf(stderr, "writer parser ini content error !!!\n");
+                exit(1);
+//                goto error;
             }
         }
         c->start   = istime_us();
-        c->pending = cfg.pipeline;
+        c->pending = c->lcfg->pipeline;
     }
 
     char  *buf = c->request + c->written;
@@ -353,7 +355,7 @@ static void socket_writeable(aeEventLoop *loop, int fd, void *data, int mask) {
 
     c->written += n;
     islog_debug("send msg [%s][%d]", buf, c->written);
-    /** Èç¹û·¢ËÍµ½ÁË³¤¶È£¬ÔòÉ¾³ıÊ±¼ä£¬µÈ¶ÁÈ¡Íê³ÉÔÙ×¢²á **/
+    /** å¦‚æœå‘é€åˆ°äº†é•¿åº¦ï¼Œåˆ™åˆ é™¤æ—¶é—´ï¼Œç­‰è¯»å–å®Œæˆå†æ³¨å†Œ **/
     if (c->written == c->length) {
         c->written = 0;
         aeDeleteFileEvent(loop, fd, AE_WRITABLE);
@@ -384,7 +386,7 @@ static void socket_readable(aeEventLoop *loop, int fd, void *data, int mask) {
             goto error;
         }
 
-        /** Èç¹û±¨ÎÄ´¦ÀíÍê³ÉÁË£¬Ôò½øĞĞÍ³¼ÆµÈ´¦Àí **/
+        /** å¦‚æœæŠ¥æ–‡å¤„ç†å®Œæˆäº†ï¼Œåˆ™è¿›è¡Œç»Ÿè®¡ç­‰å¤„ç† **/
         if( response_complete( c, c->buf, n) != 0){
             islog_error("response_complete error");
             goto error;
@@ -468,7 +470,7 @@ static int parse_args(config * lcfg, int argc, char **argv) {
     if (optind == argc || !lcfg->threads || !lcfg->duration) return -1;
 
     strcpy( lcfg->tcpini.file, argv[optind]);
-    /* ¼ì²éÑ¹²â½Å±¾ÊÇ·ñ·ûºÏÒªÇó */
+    /* æ£€æŸ¥å‹æµ‹è„šæœ¬æ˜¯å¦ç¬¦åˆè¦æ±‚ */
     if(strlen( lcfg->tcpini.file) >= TCPINIFILE_MAX_LENGTH || strlen(lcfg->tcpini.file) <= 0){
         fprintf(stderr, "filename's length is not allow [%ld]\n", strlen( lcfg->tcpini.file));
         return -1;
@@ -478,12 +480,12 @@ static int parse_args(config * lcfg, int argc, char **argv) {
         return -1;
     }
 
-    /* ¼ì²éÁ¬½ÓºÍÏß³ÌÊıµÄ¹ØÏµ */
+    /* æ£€æŸ¥è¿æ¥å’Œçº¿ç¨‹æ•°çš„å…³ç³» */
     if (!lcfg->connections || lcfg->connections < lcfg->threads) {
         fprintf(stderr, "number of connections must be >= threads\n");
         return -1;
     }
-    /* ¼ì²éhtmlfile´óĞ¡ */
+    /* æ£€æŸ¥htmlfileå¤§å° */
     if( strlen( lcfg->htmlfile) > MAX_HTML_FILELEN){
         fprintf(stderr, "output html filename[%s] is too long. \n", lcfg->htmlfile);
         return -1;
@@ -492,7 +494,7 @@ static int parse_args(config * lcfg, int argc, char **argv) {
     return 0;
 }
 
-/* Ö´ĞĞºÍµÈ´ı */
+/* æ‰§è¡Œå’Œç­‰å¾… */
 static int running_sleep( struct config * lcfg ){
     uint64_t i ;
     uint64_t complete = 0;
@@ -504,18 +506,18 @@ static int running_sleep( struct config * lcfg ){
     if( lcfg->duration % TRACE_MAX_POINT  > 0 ){
         lcfg->trace.step_time += 1;
     }
-    /*** ¿ªÊ¼µÈ´ılcfg->durationÃë ***/
+    /*** å¼€å§‹ç­‰å¾…lcfg->durationç§’ ***/
     for( i =1; i <= lcfg->duration; i++){
-        /** ÊÕµ½´ò¶ÏĞÅºÅ, ÔòÖ±½ÓÍË³ö **/
+        /** æ”¶åˆ°æ‰“æ–­ä¿¡å·, åˆ™ç›´æ¥é€€å‡º **/
         if( stop == 1 ){
             lcfg->duration = (istime_us() - lcfg->result.tm_start) / 1000000 + 1;
             printf("\n");
             break;
         }
-        /** Ã¿ÃëË¢ĞÂÒ»´Î **/
+        /** æ¯ç§’åˆ·æ–°ä¸€æ¬¡ **/
         sleep(1);
 
-        /** ¿ªÊ¼Í³¼Æ½á¹ûĞÅÏ¢ **/
+        /** å¼€å§‹ç»Ÿè®¡ç»“æœä¿¡æ¯ **/
         complete = 0;
         failure = 0;
         bytes = 0;
@@ -542,14 +544,14 @@ static int running_sleep( struct config * lcfg ){
         printf(" BPS:%sB", format_binary(bytes_per_s));
         printf(" Error:%"PRIu64"  ", error);
 
-        /** ¸ú×ÙÇ÷ÊÆµã¼ÇÂ¼ **/
+        /** è·Ÿè¸ªè¶‹åŠ¿ç‚¹è®°å½• **/
         int n = 0;
         if( lcfg->duration <= 100){
             lcfg->trace.step_time = 1;
             n = i-1;
         }else{
-            /*, Èç¹û>100¸öµã£¬ÔòĞèÒª¸ôµã¼ÇÂ¼
-            340Ãë / 100¸öµã = 3;
+            /*, å¦‚æœ>100ä¸ªç‚¹ï¼Œåˆ™éœ€è¦éš”ç‚¹è®°å½•
+            340ç§’ / 100ä¸ªç‚¹ = 3;
             1 4 7 10 13 16 19 22 25 28 31 34 37 40
              */
             if( (i-1)%lcfg->trace.step_time == 0){
@@ -559,14 +561,14 @@ static int running_sleep( struct config * lcfg ){
             }
         }
         if( n != -1){
-            /* ×¥È¡ËùÓĞÏß³Ì×î´óµÄÏìÓ¦Ê±¼ä */
+            /* æŠ“å–æ‰€æœ‰çº¿ç¨‹æœ€å¤§çš„å“åº”æ—¶é—´ */
             int k;
             for( k = 0; k < lcfg->threads ; k++){
                 if (lcfg->trace.latency[n] < lcfg->p_threads[k].latency){
                     lcfg->trace.latency[n] = lcfg->p_threads[k].latency;
                 }
             }
-            /* ¼ÇÂ¼tps²¢¸üĞÂ²É¼¯µãtps×î´óÖµºÍ×îĞ¡Öµ */
+            /* è®°å½•tpså¹¶æ›´æ–°é‡‡é›†ç‚¹tpsæœ€å¤§å€¼å’Œæœ€å°å€¼ */
             lcfg->trace.tps[n] = req_success_per_s;
             if( lcfg->result.tps_min > lcfg->trace.tps[n]  || lcfg->result.tps_min == 0 ){
                 lcfg->result.tps_min  = lcfg->trace.tps[n];
@@ -577,12 +579,12 @@ static int running_sleep( struct config * lcfg ){
             cfg.trace.use_num++;
         }
 
-        /*** Èç¹û´ïµ½½áÎ²£¬Ôò»»ĞĞ ***/
+        /*** å¦‚æœè¾¾åˆ°ç»“å°¾ï¼Œåˆ™æ¢è¡Œ ***/
         if( i == lcfg->duration){
             printf("\n");
         }
 
-        /*** ½«±ê×¼Êä³ö´òÓ¡³öÈ¥ ***/
+        /*** å°†æ ‡å‡†è¾“å‡ºæ‰“å°å‡ºå» ***/
         fflush(stdout);
     }
 
@@ -601,7 +603,7 @@ static int response_complete(void * data, char * buf, size_t n) {
     thread->complete++;
     thread->requests++;
 
-    /** Æ¥Åä½á¹û£¬Ê§°ÜµÄÒªµ¥¶ÀÍ³¼Æ **/
+    /** åŒ¹é…ç»“æœï¼Œå¤±è´¥çš„è¦å•ç‹¬ç»Ÿè®¡ **/
     islog_debug("rsp_head[%s], rsp_body[%s]", c->rsp_head, c->rsp_body);
     if(tcpini_response_issuccess(c->tcpini, c->rsp_head, c->rsp_body)){
         islog_debug(" response is success !!!!");
@@ -625,7 +627,7 @@ static int response_complete(void * data, char * buf, size_t n) {
     c->rsp_state = HEAD;
     memset( c->buf, 0x00, sizeof(c->buf));
 
-    /** tcp·Ç³¤Á¬½Ó,ĞèÒªÖØĞÂÁ¬½Ó **/
+    /** tcpéé•¿è¿æ¥,éœ€è¦é‡æ–°è¿æ¥ **/
     reconnect_socket(thread, c);
 
     return 0;
