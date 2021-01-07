@@ -51,7 +51,7 @@ test:
 $(ODIR):
 	@mkdir -p $@
 
-$(ODIR)/%.o : %.c
+$(ODIR)/%.o : %.c %.h
 	@echo CC $<
 	@$(CC) $(CFLAGS) -c -o $@ $<
 

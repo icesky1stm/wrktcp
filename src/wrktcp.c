@@ -30,10 +30,11 @@ static void usage() {
            "    -t, --threads     <N>  Number of threads to use   \n"
 
            "  Condition Options:                                  \n"
-           "        --latency          Print latency statistics   \n"
            "        --timeout     <T>  Socket/request timeout     \n"
+           "        --latency          Print latency statistics   \n"
            "        --trace            Print tps/latency trace    \n"
-           "        --html             output a html chart        \n"
+           "        --html        <T>  output a html chart        \n"
+           "        --test             just run once to test ini  \n"
 
            "    -v, --version          Print version details      \n"
            "                                                      \n"
@@ -192,7 +193,7 @@ void *thread_main(void *arg) {
         c->delayed = thread->lcfg->isdelay;
         c->tcpini = thread->tcpini;
         c->lcfg = thread->lcfg;
-        islog_debug("CREATE c->no:%ld", c->cno);
+        islog_debug("CREATE CONNECTION : cno = %ld", c->cno);
         connect_socket(thread, c);
     }
 
@@ -209,7 +210,7 @@ void *thread_main(void *arg) {
 }
 
 static int connect_socket(thread *thread, connection *c) {
-    islog_debug("CONNECT cno:%ld", c->cno);
+    islog_debug("CONNECTING cno:%ld", c->cno);
     struct sockaddr_in sin ;
 
     memset(&sin, 0x00, sizeof(struct sockaddr_in));
@@ -247,12 +248,12 @@ static int connect_socket(thread *thread, connection *c) {
 }
 
 static int reconnect_socket(thread *thread, connection *c) {
-    islog_debug("RECONNECT cno:%ld", c->cno);
+    islog_debug("RECONNECTING cno:%ld", c->cno);
     aeDeleteFileEvent(thread->loop, c->fd, AE_WRITABLE | AE_READABLE);
     sock.close(c);
     close(c->fd);
     int ret = 0;
-    if( stop != 1) {
+    if( stop != 1 && c->lcfg->istest != 1) {
         ret = connect_socket(thread, c);
     }
     return ret;
@@ -411,6 +412,7 @@ static struct option longopts[] = {
     { "duration",    required_argument, NULL, 'd' },
     { "latency",     no_argument,       NULL, 'L' },
     { "timeout",     required_argument, NULL, 'T' },
+    { "test",       no_argument,       NULL, 'I' },
     { "trace",       no_argument,       NULL, 'S' },
     { "html",        optional_argument, NULL, 'H' },
     { "help",        no_argument,       NULL, 'h' },
@@ -427,7 +429,7 @@ static int parse_args(config * lcfg, int argc, char **argv) {
     lcfg->duration    = 10;
     lcfg->timeout     = SOCKET_TIMEOUT_MS;
 
-    while ((c = getopt_long(argc, argv, "t:c:d:H:T:Lrv?", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "t:c:d:H:T:LIrv?", longopts, NULL)) != -1) {
         switch (c) {
             case 't':
                 if (scan_metric(optarg, &lcfg->threads)) return -1;
@@ -453,6 +455,9 @@ static int parse_args(config * lcfg, int argc, char **argv) {
                 if( optarg != NULL){
                     strcpy( lcfg->htmlfile, optarg);
                 }
+                break;
+            case 'I':
+                lcfg->istest = 1;
                 break;
             case 'v':
                 printf("wrktcp version %s [%s] ", WRKVERSION, aeGetApiName());
@@ -622,8 +627,15 @@ static int response_complete(void * data, char * buf, size_t n) {
         aeCreateFileEvent(thread->loop, c->fd, AE_WRITABLE, socket_writeable, c);
     }
 
-    zfree(c->rsp_head);
-    zfree(c->rsp_body);
+    if( c->rsp_head != NULL){
+        zfree(c->rsp_head);
+        c->rsp_head = NULL;
+    }
+    if( c->rsp_body != NULL) {
+        zfree(c->rsp_body);
+        c->rsp_body = NULL;
+    }
+
     c->rsp_state = HEAD;
     memset( c->buf, 0x00, sizeof(c->buf));
 

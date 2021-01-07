@@ -20,6 +20,7 @@
 
 #define INI_LENGTH "$(length)"
 
+#define TCPINI_MAX_LINE_SIZE 100000000
 
 /***********************************
  * 一、配置加载部分
@@ -66,7 +67,7 @@ int tcpini_file_load(char * filename, tcpini * tcpini ){
             continue;
         }
         /*** 替换最后的\n为结束符，如果有\n并且不是\转义的话 ***/
-        /*** TODO
+        /*** DONE
          * 此处的写法有些复杂，应该追求简单，把每种情况列出来，不要在意代码冗余
          * 逻辑清晰的代码比看起来简洁的代码更重要
          * 一共分两类共4种场景：
@@ -78,25 +79,55 @@ int tcpini_file_load(char * filename, tcpini * tcpini ){
          *      2.2 是文件最后一行，且没有换行, 需要直接就结束加\0
          */
         line_len = strlen(line);
-        if (line[line_len - 1] == '\n' && line[line_len - 2] != '\\') {
-            line[line_len - 1] = '\0';
-        }else{
-            /*** 如果不是\n或者有\\，则说明很长，指数扩容再次读取 ***/
-            line_size = line_size * 2;
-            line = zrealloc(line, line_size);
-            if( line == NULL){
-                islog_error("can't realloc line size, [%s]", strerror(errno));
-                goto error;
-            }
-            /** 把 \\替换掉,支持\\转义换行 **/
-            if( line[line_len - 2] == '\\' ){
+        /** 一、读到了 \n **/
+        if( line[line_len - 1] == '\n'){
+            /*** 1.2 如果有转义 ***/
+            if( line[line_len - 2] == '\\'){
+                /*** 判断是否需要扩容,超长了才需要 ***/
+                if( line_len >= line_size) {
+                    line_size = line_size * 2;
+                    if (line_size >= TCPINI_MAX_LINE_SIZE) {
+                        islog_error("can't realloc line size, too largh[%d]", line_size);
+                        goto error;
+                    }
+                    islog_debug("line_size==[%d]", line_size);
+                    line = zrealloc(line, line_size);
+                    if( line == NULL){
+                        islog_error("can't realloc line size, [%s]", strerror(errno));
+                        goto error;
+                    }
+                }
+                /** 把 \\替换掉,支持\\转义换行 **/
                 line[line_len - 2] = '\n';
                 line[line_len - 1] = '\0';
                 line_len = strlen(line);
+
+                /** 继续读 **/
+                continue;
+            }else{
+                /** 1.1  不是转义，直接读完了 **/
+                line[line_len - 1] = '\0';
+            }
+        }else{
+            /** 2. 如果不是\n，则说明很长，指数扩容再次读取 **/
+            /*** 2.1 判断是否需要扩容,超长了才需要 ***/
+            if( line_len >= line_size) {
+                line_size = line_size * 2;
+                if (line_size >= TCPINI_MAX_LINE_SIZE) {
+                    islog_error("can't realloc line size, too largh[%d]", line_size);
+                    goto error;
+                }
+                islog_debug("line_size==[%d]", line_size);
+                line = zrealloc(line, line_size);
+                if (line == NULL) {
+                    islog_error("can't realloc line size, [%s]", strerror(errno));
+                    goto error;
+                }
             }
             /* 扩展长度后, 继续读取后续内容 */
             continue;
         }
+
         /*** 空行都需要跳过 ***/
         if( line[0] == '\0') {
             line_len = 0;
@@ -104,7 +135,7 @@ int tcpini_file_load(char * filename, tcpini * tcpini ){
         }
         isstr_trim(line);
 
-        islog_debug("have read line [%s]", line);
+        //islog_debug("have read line [%s]", line);
         if(line_parser(line, tcpini) != 0){
             islog_error("parser line error!!!");
             goto error;
@@ -166,8 +197,8 @@ static int tcpini_check( tcpini * tcpini){
         islog_error("item rsp_code_success can't be null, current is %s ", tcpini->rsp_code_success);
         return -30;
     }
-    if( strlen( tcpini->rsp_code_localtion_tag) == 0){
-        islog_error("item rsp_code_localtion_tag can't be null, current is %s ", tcpini->rsp_code_localtion_tag);
+    if( strlen( tcpini->rsp_code_location_tag) == 0){
+        islog_error("item rsp_code_location_tag can't be null, current is %s ", tcpini->rsp_code_location_tag);
         return -30;
     }
 
@@ -194,7 +225,7 @@ static int tcpini_init( tcpini * tcpini){
     tcpini->rsp_code_type = TCPINI_PKG_FIXED;
     tcpini->rsp_code_location = TCPINI_RCL_BODY;
     strcpy(tcpini->rsp_code_success, "000000");
-    strcpy(tcpini->rsp_code_localtion_tag, "1 6");
+    strcpy(tcpini->rsp_code_location_tag, "1 6");
 
     return 0;
 }
@@ -362,9 +393,9 @@ static int line_parser(char *line, tcpini * tcpini){
                     islog_error("item[%s] is incorrect: [%s]",name, line);
                     return -5;
                 }
-            } else if( strcmp( name, "rsp_code_localtion_tag") == 0){
-                strcpy(tcpini->rsp_code_localtion_tag, pline);
-                if(strlen(tcpini->rsp_code_localtion_tag) <= 0){
+            } else if( strcmp( name, "rsp_code_location_tag") == 0){
+                strcpy(tcpini->rsp_code_location_tag, pline);
+                if(strlen(tcpini->rsp_code_location_tag) <= 0){
                     islog_error("item[%s] is incorrect: [%s]",name, line);
                     return -5;
                 }
@@ -513,7 +544,7 @@ static int tcpini_buf_eval(char ** p_buf, int * p_len, char *tmpl_buf, tcpini *t
         if(tcpini_para_eval(key, &value, tcpini, data) != 0){
             return -5;
         }
-        islog_debug("para eval [%s]=[%s]",key, value);
+//        islog_debug("para eval [%s]=[%s]",key, value);
 
         /** 计算实际长度,根据情况都要动态的调整 **/
         if( strlen(buf) + strlen(value) > buf_len){
@@ -597,19 +628,16 @@ static int tcpini_para_eval(char * key, char * *value, tcpini * tcpini, void * d
 
 /*  datetime类型的值获取 */
 static int tcpini_para_type_datetime( char * key, char **value, a_para * para, tcpini * tcpini, void * data){
-    islog_debug("para type is datetime --[%s]", key);
     *value = zcalloc( strlen(para->format) * 2 + 100);
     if( *value == NULL){
         islog_error("calloc memroy error, [%s]", strerror(errno));
         return -5;
     }
     istime_strftime( *value, strlen(para->format) * 2 + 100, para->format, istime_us());
-    islog_debug("para type is datetime --[%s]", *value);
     return 0;
 }
 /*  connectid类型的值获取 */
 static int tcpini_para_type_connectid( char * key, char **value, a_para * para, tcpini * tcpini, void * data){
-    islog_debug("para type is connectid --[%s],[%x]", key, data);
     connection *c= data;
     char * format = para->format;
 
@@ -623,12 +651,10 @@ static int tcpini_para_type_connectid( char * key, char **value, a_para * para, 
         return -5;
     }
     snprintf( *value, n, format, c->cno);
-    islog_debug("para type is connectid --[%s]", *value);
     return 0;
 }
 /* counter类型的获取 */
 static int tcpini_para_type_counter( char * key, char **value, a_para * para, tcpini * tcpini, void * data){
-    islog_debug("para type is counter --[%s]", key);
     //connection *c= data;
     long l_start = 0;
     long l_end = 0;
@@ -677,11 +703,9 @@ static int tcpini_para_type_counter( char * key, char **value, a_para * para, tc
     }
     snprintf( *value, n, fmt, cur_value);
 
-    islog_debug("para type is counter --[%s]", *value);
     return 0;
 }
 static int tcpini_para_type_file( char * key, char **value, a_para * para, tcpini * tcpini, void * data){
-    islog_debug("para type is file --[%s]", key);
 //    connection *c= data;
     FILE * fp = NULL;
     char * filename = para->format;
@@ -723,7 +747,6 @@ static int tcpini_para_type_file( char * key, char **value, a_para * para, tcpin
         (*value)[strlen(*value) - 1] = '\0';
     }
 
-    islog_debug("para type is file --[%s]", *value);
     return 0;
 }
 
@@ -788,7 +811,7 @@ int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
     switch(tcpini->rsp_code_type){
         /* 固定格式 */
         case TCPINI_PKG_FIXED:
-            sscanf(tcpini->rsp_code_localtion_tag, "%d%d", &code_beg, &code_len);
+            sscanf(tcpini->rsp_code_location_tag, "%d%d", &code_beg, &code_len);
             memcpy( rsp_code, rsp_code_pos+code_beg-1, code_len);
 
             break;
@@ -797,27 +820,27 @@ int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
              * <root><rspcode>000000</rspcode></root>
              *       0123456789
              * */
-            p = strstr(rsp_code_pos, tcpini->rsp_code_localtion_tag);
+            p = strstr(rsp_code_pos, tcpini->rsp_code_location_tag);
             if( p == NULL){
-                islog_debug("rsp msg [%s] can't find [%s]", rsp_code_pos, tcpini->rsp_code_localtion_tag);
+                islog_debug("rsp msg [%s] can't find [%s]", rsp_code_pos, tcpini->rsp_code_location_tag);
                 strcpy( rsp_code, "");
                 break;
             }
-            q = strstr( p + strlen(tcpini->rsp_code_localtion_tag), "</");
+            q = strstr( p + strlen(tcpini->rsp_code_location_tag), "</");
             if( q == NULL){
-                islog_debug("rsp msg [%s] can't find [%s]", rsp_code_pos, tcpini->rsp_code_localtion_tag);
+                islog_debug("rsp msg [%s] can't find [%s]", rsp_code_pos, tcpini->rsp_code_location_tag);
                 strcpy( rsp_code, "");
                 break;
             }
-            memcpy(rsp_code, p + strlen(tcpini->rsp_code_localtion_tag), q - (p+strlen(tcpini->rsp_code_localtion_tag)));
+            memcpy(rsp_code, p + strlen(tcpini->rsp_code_location_tag), q - (p+strlen(tcpini->rsp_code_location_tag)));
 
             break;
         case TCPINI_PKG_JSON:
             /* eg:
              * {“status”: “0000”, “message”: “success”}
              * */
-            p = strstr(rsp_code_pos, tcpini->rsp_code_localtion_tag);
-            q = strstr( p + strlen(tcpini->rsp_code_localtion_tag), "\"");
+            p = strstr(rsp_code_pos, tcpini->rsp_code_location_tag);
+            q = strstr( p + strlen(tcpini->rsp_code_location_tag), "\"");
             p = strstr( q+1, "\"");
             memcpy( rsp_code, q, p -q - 1);
 
@@ -880,6 +903,7 @@ static int response_body(void * data, char * buf, size_t n) {
         return 0;
     }
 
+    /** 如果当前报文体长度 小于 已经读取的长度，则赋值 **/
     if( strlen( c->rsp_body) < c->readlen - c->tcpini->rsp_headlen){
         memcpy( c->rsp_body + strlen(c->rsp_body), c->buf, n);
     }
@@ -890,6 +914,7 @@ static int response_body(void * data, char * buf, size_t n) {
     {
         /* 读的长度不够定义的长度 */
         if( c->readlen < c->rsp_len) {
+            /** 长度不够，继续读 **/
             ;
         }else if( c->readlen == c->rsp_len){
             c->rsp_state = COMPLETE;
@@ -904,6 +929,7 @@ static int response_body(void * data, char * buf, size_t n) {
     if(c->tcpini->rsp_len_type == TCPINI_RSP_LENTYPE_BODY) {
         /* 读的长度不够定义的长度 */
         if (c->readlen < c->rsp_len + c->tcpini->rsp_headlen){
+            /** 长度不够，继续读 **/
             ;
         }else if( c->readlen == c->rsp_len + c->tcpini->rsp_headlen){
             c->rsp_state = COMPLETE;

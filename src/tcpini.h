@@ -65,7 +65,7 @@ typedef struct _tcpini_content {
         TCPINI_RCL_HEAD
     }rsp_code_location;
     char rsp_code_success[32];
-    char rsp_code_localtion_tag[32];
+    char rsp_code_location_tag[32];
 
     /** 参数列表 parameters **/
     a_para paras[TCPINI_MAX_PARANUM];
