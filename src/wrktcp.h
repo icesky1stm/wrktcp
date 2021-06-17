@@ -80,7 +80,7 @@ typedef struct config {
     char islatency;       //是否 打印响应时间
     char istrace;         //是否 打印trace明细
     char ishtml;          //是否 输出文件
-    char istest;          //是否 单笔测试
+    char istest;          //是否 单笔调试
     char htmlfile[MAX_HTML_FILELEN];     //输出html文件名
     thread * p_threads;     //线程的内容
     /** tcp报文的结构配置信息 **/

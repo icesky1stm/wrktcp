@@ -5,7 +5,7 @@
 #ifndef WRKTCP_VERSION_H
 #define WRKTCP_VERSION_H
 
-#define WRKVERSION "1.0"
+#define WRKVERSION "1.1"
 
 #define AUTHOR "icesky"
 

@@ -464,8 +464,10 @@ int tcpini_request_parser(tcpini *tcpini, char ** request, long *length, void * 
 
     /** 开始拼装request要发送的总报文内容 **/
     *request  = zcalloc( (true_headlen + true_bodylen) * sizeof(char));
+
     memcpy( *request, true_head, true_headlen);
     memcpy( *request+true_headlen, true_body, true_bodylen);
+
 
     /** request总长度 **/
     *length =  true_headlen + true_bodylen;

@@ -114,6 +114,9 @@ int main(int argc, char **argv) {
     printf("using %s", cfg.tcpini.file);
     printf("\n");
     printf("  %"PRIu64" threads and %"PRIu64" connections\n", cfg.threads, cfg.connections);
+    if( cfg.istest == 1){
+        printf("\n----TEST MODE, connect once and more log----\n");
+    }
 
     /** 初始化基本信息 **/
     cfg.result.tm_start   = istime_us();
@@ -157,6 +160,9 @@ int main(int argc, char **argv) {
         stats_correct(cfg.statistics.latency, interval);
     }
 
+    if( cfg.istest == 1){
+        printf("----TEST MODE, connect once and more log----\n\n");
+    }
     /** 输出到屏幕上 **/
     output_console(&cfg);
 
@@ -211,6 +217,8 @@ void *thread_main(void *arg) {
 
 static int connect_socket(thread *thread, connection *c) {
     islog_debug("CONNECTING cno:%ld", c->cno);
+    islog_test("CONNECTING:[%s:%d],cno[%ld]", c->tcpini->host, c->tcpini->port, c->cno);
+
     struct sockaddr_in sin ;
 
     memset(&sin, 0x00, sizeof(struct sockaddr_in));
@@ -253,8 +261,15 @@ static int reconnect_socket(thread *thread, connection *c) {
     sock.close(c);
     close(c->fd);
     int ret = 0;
-    if( stop != 1 && c->lcfg->istest != 1) {
-        ret = connect_socket(thread, c);
+    if (stop != 1){
+        /*** v1.1修改 ***/
+        if( c->lcfg->istest == 1) {
+            /* 如果是测试场景的话 */
+            islog_test("TESTMODE, THEN STOP,cno[%ld]", c->cno);
+            stop = 1;
+        }else{
+            ret = connect_socket(thread, c);
+        }
     }
     return ret;
 }
@@ -293,6 +308,7 @@ static int delay_request(aeEventLoop *loop, long long id, void *data) {
 static void socket_connected(aeEventLoop *loop, int fd, void *data, int mask) {
     connection *c = data;
     islog_debug("ALREADY CONNECTED cno:%ld", c->cno);
+    islog_test("CONNECTED:[%s:%d],cno[%ld]", c->tcpini->host, c->tcpini->port, c->cno);
 
     switch (sock.connect(c, c->tcpini->host)) {
         case OK:    break;
@@ -356,7 +372,9 @@ static void socket_writeable(aeEventLoop *loop, int fd, void *data, int mask) {
 
     c->written += n;
     islog_debug("send msg [%s][%d]", buf, c->written);
-    /** 如果发送到了长度，则删除时间，等读取完成再注册 **/
+    islog_test("SENDMSG:[%s][%d],cno[%ld]", buf, c->written, c->cno);
+
+    /** 如果发送到了长度，则删除事件，等读取完成再注册 **/
     if (c->written == c->length) {
         c->written = 0;
         aeDeleteFileEvent(loop, fd, AE_WRITABLE);
@@ -381,6 +399,7 @@ static void socket_readable(aeEventLoop *loop, int fd, void *data, int mask) {
             case RETRY: return;
         }
         islog_debug("read buf is [%s]", c->buf);
+        islog_test("WHILE READ:[%s],cno[%ld]", c->buf, c->cno);
 
         if(tcpini_response_parser(c, c->buf, n) != 0){
             islog_error("tcpini_response_parser error");
@@ -424,8 +443,8 @@ static int parse_args(config * lcfg, int argc, char **argv) {
     int c;
 
     memset(lcfg, 0, sizeof(config));
-    lcfg->threads     = 2;
-    lcfg->connections = 10;
+    lcfg->threads     = 1;
+    lcfg->connections = 1;
     lcfg->duration    = 10;
     lcfg->timeout     = SOCKET_TIMEOUT_MS;
 
@@ -461,7 +480,7 @@ static int parse_args(config * lcfg, int argc, char **argv) {
                 break;
             case 'v':
                 printf("wrktcp version %s [%s] ", WRKVERSION, aeGetApiName());
-                printf("Copyright (C) 2020 icesky\n");
+                printf("Copyright (C) by [%s]\n", AUTHOR);
                 break;
             case 'h':
             case '?':
@@ -610,6 +629,8 @@ static int response_complete(void * data, char * buf, size_t n) {
 
     /** 匹配结果，失败的要单独统计 **/
     islog_debug("rsp_head[%s], rsp_body[%s]", c->rsp_head, c->rsp_body);
+    islog_test("RESPONSE_HEAD:[%s],RESPONSE_BODY[%s],cno[%ld]", c->rsp_head, c->rsp_body, c->cno);
+
     if(tcpini_response_issuccess(c->tcpini, c->rsp_head, c->rsp_body)){
         islog_debug(" response is success !!!!");
         /*EMPTY*/;

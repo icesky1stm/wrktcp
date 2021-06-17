@@ -40,11 +40,13 @@ do{                      \
  #define islog_info(...)
 #endif
 
+
 #ifdef ISLOG_DEBUG_ENABLE
  #define islog_debug(...)    islog_print(__FILE__,__LINE__, "debug", __VA_ARGS__)
 #else
  #define islog_debug(...)
 #endif
 
+#define islog_test(...)    islog_print(__FILE__,__LINE__, "test", __VA_ARGS__)
 
 #endif //ISLOG_H
