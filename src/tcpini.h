@@ -29,6 +29,11 @@ typedef struct _tcpini_content {
     char file[TCPINIFILE_MAX_LENGTH];
     char *host;
     int port;
+    /** 增加http的相关信息v1.2 beg **/
+    int  ishttp;
+    char * http_line;
+
+    /** 增加http的相关信息v1.2 end **/
     enum{
         S_COMMON,
         S_REQUEST,

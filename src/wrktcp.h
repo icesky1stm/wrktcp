@@ -13,6 +13,8 @@
 #include "tcpini.h"
 #include "zmalloc.h"
 
+#include "http_parser.h"
+
 #define RECVBUF  8192
 
 /** 最大支持的TPS/10, 目前的是 100W **/
@@ -46,6 +48,8 @@ typedef struct {
 typedef struct connection {
     struct config *lcfg;
     thread *thread;
+    /** http句柄 **/
+    http_parser http_parser;
     /** 连接数据 **/
     long cno;
     int fd;

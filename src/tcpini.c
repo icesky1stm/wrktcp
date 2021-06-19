@@ -21,10 +21,26 @@
 #define INI_LENGTH "$(length)"
 
 #define TCPINI_MAX_LINE_SIZE 100000000
+#define TCPINI_MAX_RSPCODE_SIZE 128
+
+
+static int http_response_complete(http_parser *parser);
+static int http_response_body(http_parser *parser, const char *at, size_t len);
+static int http_header_field(http_parser *parser, const char *at, size_t len);
+static int http_header_value(http_parser *parser, const char *at, size_t len);
+
+/** http的初始化信息 **/
+static struct http_parser_settings parser_settings = {
+        .on_message_complete = http_response_complete,
+        .on_body = http_response_body,
+        .on_header_field = http_header_field,
+        .on_header_value = http_header_value
+};
 
 /***********************************
  * 一、配置加载部分
  ***********************************/
+static int tcpini_fit( tcpini * tcpini);
 static int tcpini_check( tcpini * tcpini);
 static int tcpini_init( tcpini * tcpini);
 static int line_parser(char *line, tcpini * tcpini);
@@ -144,12 +160,17 @@ int tcpini_file_load(char * filename, tcpini * tcpini ){
         /*** 恢复循环关键字段,位移 ***/
         line_len = 0;
    }
-
+    /*** 对配置信息的默认进行补充 ***/
+    if( tcpini_fit(tcpini) != 0){
+        islog_error("tcpini config fit error!!!");
+        goto error;
+    }
     /*** 校验配置是否正确 ***/
     if( tcpini_check(tcpini) != 0){
         islog_error("tcpini config check error!!!");
         goto error;
     }
+
 
     fclose(fp);
     fp = NULL;
@@ -159,6 +180,96 @@ int tcpini_file_load(char * filename, tcpini * tcpini ){
     fclose(fp);
     fp = NULL;
     return -5;
+}
+/* 配置内容调整补充和适配 */
+static int tcpini_fit( tcpini * tcpini){
+    char default_http_host[]="Host: www.wrktcp.com\r\n";
+    char default_http_length[]="Content-Length: $(length)\r\n";
+    islog_debug("开始对未填充内容进行调整!!!");
+
+    if( tcpini->ishttp){
+        islog_debug("http内容调整");
+        /** 补充默认http头, 目前暂时就支持完全没定义的情况 **/
+        if( strcasestr(tcpini->req_head, "Host") == NULL){
+            islog_test("未配置Host头,自动填充");
+            tcpini->req_head = zrealloc(tcpini->req_head, strlen(tcpini->req_head) + strlen(default_http_host) + 1);
+            if(tcpini->req_head == NULL){
+                islog_error("zcalloc memory error [%s]",strerror(errno));
+                return -5;
+            }
+            strcat( tcpini->req_head, default_http_host);
+        }
+        if( strcasestr(tcpini->req_head, "Content-Length") == NULL){
+            islog_test("未配置Content-Length,自动填充");
+            tcpini->req_head = zrealloc(tcpini->req_head, strlen(tcpini->req_head) + strlen(default_http_length) + 1);
+            if(tcpini->req_head == NULL){
+                islog_error("zcalloc memory error [%s]",strerror(errno));
+                return -5;
+            }
+            strcat( tcpini->req_head, default_http_length);
+        }
+        islog_debug("http头是:[%s]", tcpini->req_head);
+        /** 对报文头信息进行数据调整 **/
+        /* 头部追加\r\n */
+        tcpini->req_head = zrealloc(tcpini->req_head,strlen(tcpini->req_head) + 2 + 1);
+        if(tcpini->req_head == NULL){
+            islog_error("calloc req_head error [%s]", strerror(errno));
+            return -5;
+        }
+        strcat(tcpini->req_head,"\r\n");
+
+        /* 动态计算req_len_len并赋值 */
+        char tmp_len[9];
+        sprintf(tmp_len, "%ld", strlen(tcpini->req_body));
+        tcpini->req_len_len = strlen( tmp_len);
+
+    }
+
+    /** 请求的默认参数 **/
+    if( tcpini->req_len_len == 0){
+        tcpini->req_len_len = 8;
+    }
+    if( tcpini->req_len_type == 0) {
+        tcpini->req_len_type = TCPINI_REQ_LENTYPE_BODY;
+    }
+    if( tcpini->req_head == NULL){
+        tcpini->req_head = zcalloc(strlen(INI_LENGTH) + 1);
+        if(tcpini->req_head == NULL){
+            islog_error("can't calloc memory,[%s]!!!", strerror(errno));
+            return -5;
+        }
+        strcpy( tcpini->req_head, INI_LENGTH);
+    }
+
+    /** 应答的默认参数 **/
+    if(tcpini->rsp_headlen == 0){
+        tcpini->rsp_headlen = 8;
+    }
+    if( tcpini->rsp_len_beg == 0){
+        tcpini->rsp_len_beg = 1;
+    }
+    if( tcpini->rsp_len_len == 0){
+        tcpini->rsp_len_len = 8;
+    }
+    if( tcpini->rsp_len_type == 0){
+        tcpini->rsp_len_type = TCPINI_RSP_LENTYPE_BODY;
+    }
+    if( tcpini->rsp_code_type == 0){
+        tcpini->rsp_code_type = TCPINI_PKG_FIXED;
+    }
+    if( tcpini->rsp_code_location == 0){
+        tcpini->rsp_code_location = TCPINI_RCL_BODY;
+    }
+
+    /** 默认响应码位置和成功标志 **/
+    if( strlen( tcpini->rsp_code_success) == 0){
+        strcpy(tcpini->rsp_code_success, "000000");
+    }
+    if( strlen( tcpini->rsp_code_location_tag) == 0){
+        strcpy(tcpini->rsp_code_location_tag, "1 6");
+    }
+
+    return 0;
 }
 
 /* 配置内容检查 */
@@ -193,8 +304,8 @@ static int tcpini_check( tcpini * tcpini){
         islog_error("item rsp_len_len can't morel than 10, current is %ld ", tcpini->rsp_len_len);
         return -30;
     }
-    if( strlen( tcpini->rsp_code_success) == 0){
-        islog_error("item rsp_code_success can't be null, current is %s ", tcpini->rsp_code_success);
+    if( strlen( tcpini->rsp_code_success) == 0 && strlen( tcpini->rsp_code_success) >= TCPINI_MAX_RSPCODE_SIZE){
+        islog_error("item rsp_code_success can't be null or too large, current is %s ", tcpini->rsp_code_success);
         return -30;
     }
     if( strlen( tcpini->rsp_code_location_tag) == 0){
@@ -207,25 +318,13 @@ static int tcpini_check( tcpini * tcpini){
 
 /* 配置信息初始化 */
 static int tcpini_init( tcpini * tcpini){
-    /** 设定初始值 **/
-    tcpini->section = S_COMMON;
-    tcpini->req_len_len = 8;
-    tcpini->req_len_type = TCPINI_REQ_LENTYPE_BODY;
-    tcpini->req_head = zcalloc(strlen(INI_LENGTH) + 1);
-    if(tcpini->req_head == NULL){
-        islog_error("can't calloc memory,[%s]!!!", strerror(errno));
-        return -5;
-    }
-    strcpy( tcpini->req_head, INI_LENGTH);
+    /*** 设定初始值 ***/
 
-    tcpini->rsp_headlen = 8;
-    tcpini->rsp_len_beg = 1;
-    tcpini->rsp_len_len = 8;
-    tcpini->rsp_len_type = TCPINI_RSP_LENTYPE_BODY;
-    tcpini->rsp_code_type = TCPINI_PKG_FIXED;
-    tcpini->rsp_code_location = TCPINI_RCL_BODY;
-    strcpy(tcpini->rsp_code_success, "000000");
-    strcpy(tcpini->rsp_code_location_tag, "1 6");
+    /** 设定默认的格式为tcp **/
+    tcpini->ishttp = 0; /*默认为tcp*/
+    tcpini->http_line = NULL;
+    /** 解析位置 **/
+    tcpini->section = S_COMMON;
 
     return 0;
 }
@@ -280,7 +379,7 @@ static int line_parser(char *line, tcpini * tcpini){
                 /** ip **/
                 tcpini->host = zcalloc(strlen(pline) + 1);
                 if(tcpini->host == NULL){
-                    islog_error("zcalloc memory error [%s]", strerror(errno));
+                    islog_error("zcalloc memory error[%d] [%s]", strlen(pline),strerror(errno));
                     return -5;
                 }
                 strcpy(tcpini->host, pline);
@@ -295,6 +394,34 @@ static int line_parser(char *line, tcpini * tcpini){
                     islog_error("item[%s] is incorrect: [%s]",name, line);
                     return -5;
                 }
+            } else if( strcmp( name, "http_line") == 0){
+                /** v1.2 ，增加http配置 **/
+                tcpini->http_line = zcalloc(strlen(pline) + 1);
+                if( tcpini->http_line == NULL){
+                    islog_error("zcalloc memory error[%ld] [%s]", strlen(pline), strerror(errno));
+                    return -5;
+                }
+                strcpy( tcpini->http_line, pline);
+                if( strlen(tcpini->http_line) < 10){
+                    islog_error("item[%s] is incorrect: [%s]",name, line);
+                    return -5;
+                }
+                /*定义http_line则是http协议*/
+                tcpini->ishttp = 1;
+
+                /* 把firstline 放到req_head的第一行 */
+                if( tcpini->req_head != NULL){
+                    islog_error("item[%s] must be config early than req_head: [%s]",name, tcpini->req_head);
+                    return -5;
+                }
+                tcpini->req_head = zcalloc(strlen(tcpini->http_line) + 2 + 1);
+                if(tcpini->req_head == NULL){
+                    islog_error("calloc req_head error [%s]", strerror(errno));
+                    return -5;
+                }
+                strcpy( tcpini->req_head, tcpini->http_line);
+                strcat( tcpini->req_head, "\r\n");
+
             } else {
                 islog_error("illegal item name [%s], please check", name);
                 return -5;
@@ -319,21 +446,31 @@ static int line_parser(char *line, tcpini * tcpini){
                     return -5;
                 }
             } else if( strcmp( name, "req_head") == 0) {
-               /* 先销毁初始化的req_head */
-               zfree(tcpini->req_head);
-                tcpini->req_head = zcalloc(strlen(pline) + 1);
-               if(tcpini->req_head == NULL){
-                   islog_error("calloc req_head error [%s]", strerror(errno));
-                   return -5;
-               }
-               strcpy(tcpini->req_head, pline);
+                /** v1.2 ，增加http配置,支持多个头的req_head叠加 **/
+                if( tcpini->ishttp){
+                    /* http的话,可以配置多个req_head，然后拼起来 */
+                    tcpini->req_head = zrealloc(tcpini->req_head,strlen(tcpini->req_head) + strlen(line) + 2 + 1);
+                    if(tcpini->req_head == NULL){
+                        islog_error("calloc req_head error [%s]", strerror(errno));
+                        return -5;
+                    }
+                    strcat(tcpini->req_head, pline);
+                    strcat(tcpini->req_head,"\r\n");
+                }else{
+                    tcpini->req_head = zcalloc(strlen(pline) + 1);
+                    if(tcpini->req_head == NULL){
+                        islog_error("calloc req_head error [%s]", strerror(errno));
+                        return -5;
+                    }
+                    strcpy(tcpini->req_head, pline);
+                }
             } else if( strcmp( name, "req_body") == 0){
-                tcpini->req_body = zcalloc((strlen(pline) + 1));
+                tcpini->req_body = zcalloc((strlen(pline) + 2 + 1));
                if(tcpini->req_body == NULL){
                    islog_error("calloc req_head error [%s]", strerror(errno));
                    return -5;
                }
-               strcpy( tcpini->req_body, pline);
+               strcat( tcpini->req_body, pline);
             } else {
                 islog_error("request's item is error [%s]", name);
                 return -5;
@@ -763,29 +900,39 @@ static int response_body(void * data, char * buf, size_t n);
 int tcpini_response_init(void * data){
     connection *c = data;
     c->readlen = 0;
-    c->rsp_head = zcalloc(c->tcpini->rsp_headlen * sizeof(char) + 1);
-    if( c->rsp_head == NULL){
-        return -5;
-    }
 
+    if( c->tcpini->ishttp){
+        /* 重置连接 */
+        http_parser_init(&c->http_parser, HTTP_RESPONSE);
+    }else{
+        c->rsp_head = zcalloc(c->tcpini->rsp_headlen * sizeof(char) + 1);
+        if( c->rsp_head == NULL){
+            return -5;
+        }
+    }
     return 0;
 }
 /** 应答部分处理-拆包 **/
 int tcpini_response_parser(void * data, char * buf, size_t n){
     connection *c = data;
 
-    c->readlen += n;
+    if( c->tcpini->ishttp){
+        if (http_parser_execute(&c->http_parser, &parser_settings, buf, n) != n) {
+            goto error;
+        }
+    }else{
+        c->readlen += n;
+        if( response_head( c, buf, n) != 0){
+            goto error;
+        }
 
-    if( response_head( c, buf, n) != 0){
-        goto error;
-    }
-
-    if( response_body( c, buf, n) != 0){
-        goto error;
+        if( response_body( c, buf, n) != 0){
+            goto error;
+        }
     }
 
     return 0;
-  error:
+error:
     return -5;
 
 }
@@ -799,7 +946,7 @@ int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
     char * p = NULL;
     char * q = NULL;
 
-    char rsp_code[32];
+    char rsp_code[TCPINI_MAX_RSPCODE_SIZE];
     memset( rsp_code, 0x00, sizeof( rsp_code));
 
     /** 响应码的部分 **/
@@ -844,7 +991,7 @@ int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
             p = strstr(rsp_code_pos, tcpini->rsp_code_location_tag);
             q = strstr( p + strlen(tcpini->rsp_code_location_tag), "\"");
             p = strstr( q+1, "\"");
-            memcpy( rsp_code, q, p -q - 1);
+            memcpy( rsp_code, q+1, p -q - 1);
 
             break;
         default:
@@ -854,7 +1001,7 @@ int tcpini_response_issuccess(tcpini *tcpini, char *head, char *body){
     if(strcmp(rsp_code, tcpini->rsp_code_success) == 0){
         success = 1;
     }else{
-        islog_debug("rsp_code[%s] != [%s] ", rsp_code, tcpini->rsp_code_success);
+        islog_test("rsp_code[%s] != [%s] ", rsp_code, tcpini->rsp_code_success);
     }
 
     return success;
@@ -907,7 +1054,7 @@ static int response_body(void * data, char * buf, size_t n) {
 
     /** 如果当前报文体长度 小于 已经读取的长度，则赋值 **/
     if( strlen( c->rsp_body) < c->readlen - c->tcpini->rsp_headlen){
-        memcpy( c->rsp_body + strlen(c->rsp_body), c->buf, n);
+        memcpy( c->rsp_body + strlen(c->rsp_body), buf, n);
     }
 
     islog_debug("readlen[%d], rsplen[%d],rsp_headlen[%d]", c->readlen, c->rsp_len, c->tcpini->rsp_headlen);
@@ -946,3 +1093,62 @@ static int response_body(void * data, char * buf, size_t n) {
 }
 
 
+static int http_response_complete(http_parser *parser) {
+    connection *c = parser->data;
+
+    /** 通过该回调函数，设置结束标志 **/
+    c->rsp_state = COMPLETE;
+
+    return 0;
+}
+static int http_response_body(http_parser *parser, const char *at, size_t len) {
+    connection *c = parser->data;
+
+    c->rsp_len = len;
+
+    /** 按长度申请报文体的长度，这里没有做判断，如果是lentype是totoal，则多申请了报文头的长度 **/
+    c->rsp_body = zcalloc( c->rsp_len * sizeof(char) + 1 );
+    if( c->rsp_body == NULL){
+        fprintf(stderr, "rsp_body calloc error [%s]", strerror(errno));
+        return -5;
+    }
+    memcpy( c->rsp_body, at, c->rsp_len);
+    c->rsp_state = BODY;
+
+    return 0;
+}
+
+static int http_header_field(http_parser *parser, const char *at, size_t len) {
+    connection *c = parser->data;
+
+    if( c->rsp_head == NULL){
+        c->rsp_head = zcalloc(len + 2 + 1);
+    }else{
+        c->rsp_head = zrealloc(c->rsp_head,strlen(c->rsp_head) + len + 2 + 1);
+    }
+
+    if(c->rsp_head == NULL){
+        islog_error("calloc req_head error [%s]", strerror(errno));
+        return -5;
+    }
+
+    strncat( c->rsp_head, at, len);
+    strcat( c->rsp_head,":");
+
+    return 0;
+}
+
+static int http_header_value(http_parser *parser, const char *at, size_t len) {
+    connection *c = parser->data;
+
+    c->rsp_head = zrealloc(c->rsp_head,strlen(c->rsp_head) + len + 2 + 1);
+    if(c->rsp_head == NULL){
+        islog_error("calloc req_head error [%s]", strerror(errno));
+        return -5;
+    }
+
+    strncat( c->rsp_head, at, len);
+    strcat( c->rsp_head,"\r\n");
+
+    return 0;
+}

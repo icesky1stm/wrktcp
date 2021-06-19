@@ -200,6 +200,12 @@ void *thread_main(void *arg) {
         c->tcpini = thread->tcpini;
         c->lcfg = thread->lcfg;
         islog_debug("CREATE CONNECTION : cno = %ld", c->cno);
+        if( c->tcpini->ishttp){
+            /*  http结构体 */
+            http_parser_init(&c->http_parser, HTTP_RESPONSE);
+            c->http_parser.data = c;
+        }
+
         connect_socket(thread, c);
     }
 
@@ -665,3 +671,4 @@ static int response_complete(void * data, char * buf, size_t n) {
 
     return 0;
 }
+
