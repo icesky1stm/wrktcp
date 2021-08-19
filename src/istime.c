@@ -75,7 +75,6 @@ long istime_longdate(){
     return (local_time.tm_year+1900)*10000 + (local_time.tm_mon+1)*100 + local_time.tm_mday;
 }
 
-/** redis 重写的不会导致死锁的localtime **/
 static int is_leap_year(time_t year) {
     if (year % 4) return 0;         /* A year not divisible by 4 is not leap. */
     else if (year % 100) return 1;  /* If div by 4 and not 100 is surely leap. */
@@ -83,13 +82,20 @@ static int is_leap_year(time_t year) {
     else return 1;                  /* If div by 100 and 400 is leap. */
 }
 
+/** redis 重写的不会导致死锁的localtime **/
 static void nolocks_localtime(time_t *p_t, struct tm *tmp) {
-    /*** 在redis代码的基础上，做了修改  ***/
-    static int static_tz_set = 0;
+    /*** 在redis源码的基础上，做了修改  ***/
+    static int static_istime_tz_set = 0;
     int dst = 0; // 不支持夏令时，因为这是中国
-    if( static_tz_set == 0){
+    if( static_istime_tz_set == 0){
         tzset();
-        static_tz_set = 1;
+        static_istime_tz_set = 1;
+    }
+
+    /*** 获取时区信息 ***/
+    static unsigned long static_istime_timezone = -999; //
+    if( static_istime_timezone == -999){
+        static_istime_timezone = istime_timezone();
     }
 
     time_t t = *p_t;
@@ -97,7 +103,7 @@ static void nolocks_localtime(time_t *p_t, struct tm *tmp) {
     const time_t secs_hour = 3600;
     const time_t secs_day = 3600*24;
 
-    t -= timezone;                      /* Adjust for timezone. */
+    t -= static_istime_timezone;               /* Adjust for timezone. */
     t += 3600*dst;                      /* Adjust for daylight time. */
     time_t days = t / secs_day;         /* Days passed since epoch. */
     time_t seconds = t % secs_day;      /* Remaining seconds. */
@@ -137,4 +143,20 @@ static void nolocks_localtime(time_t *p_t, struct tm *tmp) {
 
     tmp->tm_mday = days+1;  /* Add 1 since our 'days' is zero-based. */
     tmp->tm_year -= 1900;   /* Surprisingly tm_year is year-1900. */
+}
+
+unsigned long istime_timezone(void) {
+    /**TODO 考虑到系统兼容性，timezone全局变量后续再使用
+#if defined(__linux__) || defined(__sun)
+    printf("timezone\n\n");
+    return timezone;
+#else
+     **/
+    struct timeval tv;
+    struct timezone tz;
+
+    gettimeofday(&tv, &tz);
+
+    return tz.tz_minuteswest * 60UL;
+//#endif
 }
