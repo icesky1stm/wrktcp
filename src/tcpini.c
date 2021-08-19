@@ -2,6 +2,7 @@
 // Created by icesky on 2020/12/11.
 //
 
+#define _GNU_SOURCE             // 宏定义必须有，否则编译会有Warning警告信息
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
