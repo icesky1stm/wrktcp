@@ -2,3 +2,5 @@ obj/*
 wrktcp
 /test/testserver
 *.html
+.vscode/*
+.idea/*
